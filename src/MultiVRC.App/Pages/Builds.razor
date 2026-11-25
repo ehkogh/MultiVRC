@@ -1,0 +1,168 @@
+@page "/builds"
+@implements IDisposable
+@inject LauncherState State
+@inject Toasts Messages
+@inject Backdrop Background
+
+<div class="page-tools">
+    <div class="add-menu" @onkeydown='e => { if (e.Key == "Escape") _menu = false; }'>
+        <button class="add-button @(_menu ? "open" : "")" title="Add a build" @onclick="() => _menu = !_menu"><Icon Name="plus" Size="20" /></button>
+        @if (_menu)
+        {
+            <div class="menu-backdrop" @onclick="() => _menu = false"></div>
+            <div class="menu" role="menu">
+                <button class="menu-item" role="menuitem" disabled="@(State.CurrentDownload is { Finished: false })" @onclick="() => { _menu = false; OpenDownload(); }">
+                    <span class="menu-icon steam"><Icon Name="download" Size="16" /></span>
+                    <span><b>Download from Steam</b><span class="muted small">Any VRChat branch, or an exact version</span></span>
+                </button>
+                <button class="menu-item" role="menuitem" @onclick="() => { _menu = false; OpenImport(); }">
+                    <span class="menu-icon"><Icon Name="folder" Size="16" /></span>
+                    <span><b>Import a folder</b><span class="muted small">A copy of VRChat already on this PC</span></span>
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (State.CurrentDownload is { } download)
+{
+    <div class="card download-card">
+        <div class="card-head">
+            <span class="card-icon"><Icon Name="download" /></span>
+            <div>
+                <h2>@(download.Finished ? (download.Result is not null ? "Downloaded" : "Download stopped") : "Downloading") @download.Name</h2>
+                <div class="small muted">@(download.Error ?? download.Status)</div>
+            </div>
+            <span class="spacer"></span>
+            @if (!download.Finished) { <button class="secondary small" @onclick="download.Cancel">Cancel</button> }
+            else { <button class="secondary small" @onclick="State.DismissDownload">Dismiss</button> }
+        </div>
+        <div class="progress"><span style="width:@(download.Percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></div>
+    </div>
+}
+
+<div class="card">
+    @if (_builds.Count == 0)
+    {
+        <div class="empty">No builds yet. Download one from Steam, or import a game folder you already have.</div>
+    }
+    else
+    {
+        <table class="compact">
+            <thead><tr><th>Name</th><th>Version</th><th>From</th><th>Size</th><th>Used by</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var build in _builds)
+                {
+                    var users = _instances.Where(i => i.BuildId == build.Id).ToList();
+                    <tr>
+                        <td><b>@build.Name</b></td>
+                        <td>@(build.Version.Length > 0 ? build.Version : "—")</td>
+                        <td class="small">
+                            @if (build.Source == "steam") { <span>Steam @(build.Branch is { } b && b != "public" ? $"({b})" : "")</span> @if (build.ManifestId is { } m) { <code class="muted"> @m</code> } }
+                            else { <span>a folder</span> }
+                        </td>
+                        <td class="small">@Format.Size(build.SizeBytes)</td>
+                        <td class="small">@(users.Count == 0 ? "nothing" : string.Join(", ", users.Select(u => u.Name)))</td>
+                        <td class="right nowrap">
+                            <button class="secondary small" @onclick="() => WindowActions.OpenFolder(State.Paths.BuildFiles(build.Id))">Folder</button>
+                            <ConfirmButton Class="secondary small" Disabled="users.Count > 0" OnConfirm="() => Delete(build)" Confirm="Delete?">Delete</ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<SteamDownloadDialog @bind-Open="_downloading" />
+
+<Modal @bind-Open="_importing" Title="Import a game folder">
+    <ChildContent>
+        <p class="small muted">Makes a build of a VRChat folder already on this PC. On the same drive its files are linked, not copied.</p>
+        <label>Folder</label>
+        <div class="input-group">
+            <input @bind="_folder" placeholder="…\steamapps\content\app_438100\2026" />
+            <button class="secondary" @onclick="PickFolderAsync">Browse</button>
+        </div>
+        <div class="field-row">
+            <div><label>Name</label><input @bind="_name" /></div>
+            <div><label>Version</label><input @bind="_version" placeholder="2026.4.1p1-1937" /></div>
+        </div>
+        @if (_progress is not null) { <div class="hint">@_progress</div> }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="secondary" @onclick="() => _importing = false">Cancel</button>
+        <button disabled="@(_busy || _folder.Length == 0)" @onclick="ImportAsync">@(_busy ? "Importing…" : "Import")</button>
+    </Footer>
+</Modal>
+
+@code {
+    private List<Build> _builds = [];
+    private List<Instance> _instances = [];
+    private bool _downloading, _importing, _busy, _menu;
+    private string _name = "", _version = "", _folder = "";
+    private string? _progress;
+    private ActiveDownload? _announced;
+
+    protected override void OnInitialized()
+    {
+        Background.Reset();
+        Load();
+        State.Changed += OnChanged;
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        Load();
+        if (State.CurrentDownload is { Finished: true } done && !ReferenceEquals(done, _announced))
+        {
+            _announced = done;
+            if (done.Result is { } build) Messages.Ok($"{build.Name} is ready.");
+            else if (done.Error is { } error && error != "Cancelled.") Messages.Error($"{done.Name} did not download: {error}");
+        }
+        StateHasChanged();
+    });
+
+    private void Load()
+    {
+        _builds = State.Library.Builds();
+        _instances = State.Library.Instances();
+    }
+
+    private void OpenDownload() => _downloading = true;
+
+    private void OpenImport()
+    {
+        _folder = _name = _version = "";
+        _progress = null;
+        _importing = true;
+    }
+
+    private async Task PickFolderAsync()
+    {
+        if (await WindowActions.PickFolderAsync("The folder VRChat.exe is in") is { } folder)
+        {
+            _folder = folder;
+            if (_name.Length == 0) _name = Path.GetFileName(folder);
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        _busy = true;
+        var progress = new Progress<(int Done, int Total)>(p => InvokeAsync(() => { _progress = $"{p.Done:N0} of {p.Total:N0} files"; StateHasChanged(); }));
+        var name = _name.Trim().Length > 0 ? _name.Trim() : Path.GetFileName(_folder.TrimEnd('\\', '/'));
+        var ok = await Messages.TryAsync(() => Task.Run(() => State.Library.ImportFolder(_folder.Trim(), name, _version.Trim(), progress)), $"{name} imported.");
+        _busy = false;
+        if (ok) { _importing = false; Load(); }
+    }
+
+    private void Delete(Build build)
+    {
+        Messages.Try(() => State.Library.DeleteBuild(build.Id), $"{build.Name} deleted.");
+        Load();
+    }
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

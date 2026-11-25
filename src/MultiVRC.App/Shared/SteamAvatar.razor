@@ -1,0 +1,22 @@
+@inject LauncherState State
+
+<div class="steam-who">
+    @if (State.Steam.Profile?.AvatarUrl is { } avatar)
+    {
+        <img class="steam-avatar" src="@avatar" alt="" />
+    }
+    else
+    {
+        <div class="steam-avatar">@(Name[..1].ToUpperInvariant())</div>
+    }
+    <div class="steam-who-text">
+        @if (Label is not null) { <div class="small muted">@Label</div> }
+        <b>@Name</b>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+
+    private string Name => State.Steam.Profile?.Name is { Length: > 0 } name ? name : State.Steam.AccountName is { Length: > 0 } account ? account : "?";
+}

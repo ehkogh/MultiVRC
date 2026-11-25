@@ -1,0 +1,235 @@
+@page "/instance/{Id}"
+@implements IDisposable
+@inject LauncherState State
+@inject ServerLook Look
+@inject Backdrop Background
+@inject Toasts Messages
+@inject NavigationManager Navigation
+@inject UpdateService Updater
+@inject InstanceActions Actions
+
+@if (_instance is not { } instance)
+{
+    <div class="state-page"><div class="state-emoji">🔍</div><h1>No such instance</h1><AppLink class="button" Href="/library">Back to the library</AppLink></div>
+    return;
+}
+
+@{
+    var running = State.Runner.Running?.Id == instance.Id;
+    var busy = State.Runner.Running is not null && !running;
+    var pending = Updater.PendingFor(instance.Id);
+    var updating = Updater.Active is { } active && active.InstanceId == instance.Id ? active : ((string, string, double)?)null;
+    var branding = Look.BrandingOf(instance);
+    var featured = _news?.FirstOrDefault();
+    var more = _news?.Skip(1).Take(3).ToList() ?? [];
+    var playModes = State.Library.PlayModesOf(instance);
+    var hasMore = instance.Kind == InstanceKind.Official || playModes.Count > 0;
+}
+
+<div class="server" @key="instance.Id" style="--accent:@instance.Accent"
+     @oncontextmenu="e => Actions.ShowMenu(instance.Id, e.ClientX, e.ClientY)" @oncontextmenu:preventDefault="true">
+    <header class="server-head">
+        <div class="server-badge rise r1">
+            <ServerIcon Instance="instance" Class="badge-art" />
+        </div>
+        <h1 class="server-name rise r2">@instance.Name</h1>
+        <div class="server-tagline rise r3">@Look.TaglineOf(instance)</div>
+
+        <div class="server-actions rise r4">
+            @if (running)
+            {
+                <button class="play running" title="Close the game" @onclick="() => State.Runner.Stop()">
+                    <span class="label-idle">Playing</span><span class="label-hover">Close</span>
+                </button>
+            }
+            else if (updating is { } progress)
+            {
+                <button class="play updating" disabled>
+                    <span class="play-fill" style="width:@(progress.Item3.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                    <span class="play-label"><Icon Name="download" Size="16" /> @progress.Item2 @(progress.Item3 > 0 && progress.Item3 < 100 ? $"{progress.Item3:0}%" : "")</span>
+                </button>
+            }
+            else if (pending is not null)
+            {
+                <button class="play update" disabled="@busy" @onclick="() => Updater.ApplyAsync(instance.Id)"><Icon Name="download" Size="18" /> Update</button>
+                <button class="ghost small play-anyway" disabled="@busy" @onclick="LaunchAsync">Play this version</button>
+            }
+            else
+            {
+                <div class="play-split @(hasMore ? "has-more" : "")">
+                    <button class="play" disabled="@busy" title="@(busy ? $"{State.Runner.Running!.Name} is running" : "")" @onclick="LaunchAsync">
+                        <Icon Name="play" Size="18" /> Play
+                    </button>
+                    @if (hasMore)
+                    {
+                        <button class="play play-caret @(_modes ? "open" : "")" disabled="@busy" title="Other ways to start" @onclick="() => _modes = !_modes"><Icon Name="chevron-down" Size="18" Stroke="2.6" /></button>
+                        @if (_modes)
+                        {
+                            <div class="menu-backdrop" @onclick="() => _modes = false"></div>
+                            <div class="context-menu play-modes">
+                                @if (instance.Kind == InstanceKind.Official)
+                                {
+                                    <button class="context-item" @onclick="() => LaunchAsync(LaunchMode.Desktop)"><Icon Name="monitor" Size="15" /> Play in desktop mode</button>
+                                    <button class="context-item" @onclick="() => LaunchAsync(LaunchMode.WithoutAntiCheat)"><Icon Name="shield-off" Size="15" /> Play without anti-cheat</button>
+                                }
+                                @foreach (var play in playModes)
+                                {
+                                    <button class="context-item" @onclick="() => LaunchAsync(play)"><Icon Name="@Icon.Or(play.Icon)" Size="15" /> @play.Label</button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+            <button class="icon-button more" title="More" @onclick="e => Actions.ShowMenu(instance.Id, e.ClientX, e.ClientY)">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+            </button>
+        </div>
+    </header>
+
+    <section class="news-row">
+        <div class="welcome glass rise r5">
+            <Cover Seed="@(instance.ArtSeed ?? instance.Id)" Name="@instance.Name" Accent="@instance.Accent" Class="welcome-art" ShowMonogram="false">
+                <div class="welcome-stats">
+                    <div><b>@Format.Played(instance.TotalPlayed)</b><span>played</span></div>
+                    <div><b>@(running ? "now" : Format.Ago(instance.LastPlayedAt))</b><span>last session</span></div>
+                </div>
+            </Cover>
+            <div class="welcome-text">@(instance.LastPlayedAt is null ? $"Welcome to {instance.Server}! Hit Play to jump in." : $"Thanks for playing on {instance.Server}.")</div>
+        </div>
+
+        @if (_news is null)
+        {
+            <div class="news-list rise r6">
+                @for (var i = 0; i < 3; i++) { <div class="news-line skeleton"><div class="news-thumb"></div><div class="news-lines"><span></span><span></span></div></div> }
+            </div>
+            <div class="featured glass skeleton rise r7"><div class="featured-art"></div></div>
+        }
+        else if (featured is null)
+        {
+            <div class="no-news glass rise r6">
+                <Icon Name="sparkles" Size="22" />
+                <div>
+                    <b>No news from @instance.Server</b>
+                    <div class="muted small">@(branding.News is null ? "Its template has no news feed. Servers can add one to their template." : "The feed is empty or could not be reached.")</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="news-list">
+                @foreach (var (item, index) in more.Select((n, i) => (n, i)))
+                {
+                    <button class="news-line rise" style="animation-delay:@(0.32 + index * 0.06)s" @onclick="() => WindowActions.OpenUrl(item.Url)">
+                        <div class="news-thumb" style="@(item.ImageUrl is { } img ? $"background-image:url('{img}')" : "")"></div>
+                        <div class="news-lines">
+                            <span class="news-title">@item.Title</span>
+                            <span class="news-when">@Format.Ago(item.PublishedAt)</span>
+                        </div>
+                    </button>
+                }
+            </div>
+
+            <article class="featured glass rise r7">
+                @if (IsNew(featured)) { <span class="ribbon">NEW</span> }
+                <div class="featured-art" style="@(featured.ImageUrl is { } cover ? $"background-image:url('{cover}')" : "")"></div>
+                <div class="featured-body">
+                    <h3>@featured.Title</h3>
+                    <div class="news-when">@(featured.PublishedAt?.LocalDateTime.ToString("d MMMM yyyy") ?? "")</div>
+                    <p>@featured.Summary</p>
+                    @if (featured.Url is not null)
+                    {
+                        <button class="read-more" @onclick="() => WindowActions.OpenUrl(featured.Url)">Read more <Icon Name="external" Size="13" /></button>
+                    }
+                </div>
+            </article>
+        }
+    </section>
+
+    @if (branding.Links.Count > 0)
+    {
+        <footer class="server-links rise r8">
+            @foreach (var link in branding.Links)
+            {
+                <button class="social" title="@link.Label" @onclick="() => WindowActions.OpenUrl(link.Url)">
+                    <Icon Name="@(link.Kind switch { "discord" => "discord", "x" => "x-brand", "youtube" => "youtube", "github" => "github", _ => "globe" })" Size="16" />
+                </button>
+            }
+        </footer>
+    }
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private Instance? _instance;
+    private Build? _build;
+    private List<NewsItem>? _news;
+    private CancellationTokenSource? _loading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        State.Changed -= OnChanged;
+        State.Changed += OnChanged;
+        Updater.Changed -= OnChanged;
+        Updater.Changed += OnChanged;
+        _instance = State.Library.FindInstance(Id);
+        if (_instance is null) { Background.Reset(); return; }
+        _build = State.Library.FindBuild(_instance.BuildId);
+        _news = null;
+        Background.ShowInstance(_instance, Look.BackgroundCss(_instance, []));
+
+        _loading?.Cancel();
+        _loading = new CancellationTokenSource();
+        var token = _loading.Token;
+        var instance = _instance;
+        var news = await Look.NewsOf(instance, token);
+        if (token.IsCancellationRequested) return;
+        _news = news;
+        Background.ShowInstance(instance, Look.BackgroundCss(instance, news));
+    }
+
+    private void OnChanged() => InvokeAsync(() =>
+    {
+        if (State.Library.FindInstance(Id) is { } fresh)
+        {
+            _instance = fresh;
+            _build = State.Library.FindBuild(fresh.BuildId);
+        }
+        StateHasChanged();
+    });
+
+    private static bool IsNew(NewsItem item) => item.PublishedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromDays(14);
+
+    private bool _modes;
+
+    private Task LaunchAsync() => LaunchAsync(LaunchMode.Normal);
+
+    private async Task LaunchAsync(LaunchMode mode)
+    {
+        _modes = false;
+        if (await Messages.Try(() => State.Runner.Launch(_instance!, mode), $"Starting {_instance!.Name}{ModeNote(mode)}…") && State.Settings.MinimizeOnLaunch && !State.Demo)
+            WindowActions.Minimize();
+    }
+
+    private async Task LaunchAsync(TemplatePlayMode play)
+    {
+        _modes = false;
+        if (await Messages.Try(() => State.Runner.Launch(_instance!, play: play), $"Starting {_instance!.Name}: {play.Label}…") && State.Settings.MinimizeOnLaunch && !State.Demo)
+            WindowActions.Minimize();
+    }
+
+    private static string ModeNote(LaunchMode mode) => mode switch
+    {
+        LaunchMode.Desktop => " in desktop mode",
+        LaunchMode.WithoutAntiCheat => " without anti-cheat",
+        _ => "",
+    };
+
+    public void Dispose()
+    {
+        _loading?.Cancel();
+        State.Changed -= OnChanged;
+        Updater.Changed -= OnChanged;
+    }
+}

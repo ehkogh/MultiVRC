@@ -1,0 +1,23 @@
+name: Template problem
+description: A template doesn't install, update or show the way it should.
+labels: [templates]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: Template URL
+      placeholder: https://my-server.example/multivrc.json
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the launcher's message if it showed one.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MultiVRC version
+      placeholder: "0.1.0"

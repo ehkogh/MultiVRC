@@ -1,0 +1,11 @@
+@page "/"
+@inject LauncherState State
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        var last = State.Library.Instances().OrderByDescending(i => i.LastPlayedAt ?? DateTimeOffset.MinValue).FirstOrDefault();
+        Navigation.NavigateTo(last is null ? "/library" : $"/instance/{last.Id}", replace: true);
+    }
+}

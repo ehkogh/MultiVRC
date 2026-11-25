@@ -1,0 +1,42 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+<span @attributes="Attributes" class="@CssClass" role="link" tabindex="0" data-href="@Href"
+      @onclick="Go" @onkeydown="Key">@ChildContent</span>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "/";
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public bool Highlight { get; set; }
+    [Parameter] public bool Prefix { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
+
+    private string CssClass => Highlight && IsCurrent ? $"{Class} active" : Class ?? "";
+
+    private bool IsCurrent
+    {
+        get
+        {
+            var here = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0];
+            var target = Href.Split('?')[0];
+            return Prefix ? here.StartsWith(target, StringComparison.Ordinal) : here == target;
+        }
+    }
+
+    protected override void OnInitialized() => Navigation.LocationChanged += Changed;
+
+    private void Changed(object? sender, LocationChangedEventArgs e)
+    {
+        if (Highlight) InvokeAsync(StateHasChanged);
+    }
+
+    private void Go() => Navigation.NavigateTo(Href);
+
+    private void Key(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ") Go();
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= Changed;
+}

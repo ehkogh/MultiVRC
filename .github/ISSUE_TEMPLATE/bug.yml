@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in the launcher doesn't work.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open an instance of …
+        2. Click …
+  - type: input
+    id: version
+    attributes:
+      label: MultiVRC version
+      description: Settings → MultiVRC shows it.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Instance
+      options:
+        - Official
+        - Verified community server
+        - Unverified community server
+        - Not about an instance
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Drag files in here. Leave out anything with your Steam name or login in it.

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    name: Launcher
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore MultiVRC.slnx
+
+      - name: Build
+        run: dotnet build MultiVRC.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test MultiVRC.slnx -c Release --no-build --logger "trx;LogFileName=results.trx" --results-directory test-results
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $base = ([xml](Get-Content src/MultiVRC.App/MultiVRC.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          dotnet publish src/MultiVRC.App -c Release -r win-x64 --self-contained true "-p:Version=$base-ci.${{ github.run_number }}" -o publish --nologo
+          Get-ChildItem publish -Filter *.pdb | Remove-Item
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultiVRC-win-x64-ci.${{ github.run_number }}
+          path: publish
+          retention-days: 14
+
+  site:
+    name: Site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      - name: Check the worker bundles
+        run: npm run check

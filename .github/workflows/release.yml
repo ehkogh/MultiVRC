@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Read the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Tag ${{ github.ref_name }} is not vX.Y.Z or vX.Y.Z-pre." }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-'))".ToLower() >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test tests/MultiVRC.Core.Tests -c Release
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.value }}"
+          dotnet publish src/MultiVRC.App -c Release -r win-x64 --self-contained true -p:Version=$version -o publish --nologo
+          Get-ChildItem publish -Filter *.pdb | Remove-Item
+          Compress-Archive -Path publish/* -DestinationPath MultiVRC-win-x64.zip
+          $hash = (Get-FileHash MultiVRC-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  MultiVRC-win-x64.zip" | Out-File -Encoding ascii -NoNewline MultiVRC-win-x64.zip.sha256
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" "/DNumericVersion=$($version.Split('-')[0])" "/DPublishDir=$PWD\publish" installer\MultiVRC.iss
+          if ($LASTEXITCODE) { throw 'Inno Setup failed' }
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $extra = @()
+          if ("${{ steps.version.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
+          gh release create "${{ github.ref_name }}" MultiVRC-win-x64.zip MultiVRC-win-x64.zip.sha256 (Get-ChildItem installer/out/MultiVRC-Setup-*.exe).FullName --title "MultiVRC ${{ github.ref_name }}" --generate-notes @extra

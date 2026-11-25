@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MultiVRC.App/MultiVRC.App.csproj" />
+    <Project Path="src/MultiVRC.Core/MultiVRC.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MultiVRC.Core.Tests/MultiVRC.Core.Tests.csproj" />
+  </Folder>
+</Solution>

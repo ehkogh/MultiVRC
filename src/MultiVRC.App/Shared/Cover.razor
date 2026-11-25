@@ -1,0 +1,13 @@
+<div class="cover @Art.Pattern(Seed) @Class" style="background:@Art.Background(Seed, Accent); --accent-card:@Accent">
+    @if (ShowMonogram) { <span class="monogram">@Art.Monogram(Name)</span> }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Seed { get; set; } = "";
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public string Accent { get; set; } = "#3fb68b";
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public bool ShowMonogram { get; set; } = true;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

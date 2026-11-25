@@ -1,0 +1,12 @@
+<div class="tabbar" role="tablist">
+    @foreach (var (id, label) in Items)
+    {
+        <button role="tab" class="@(id == Active ? "on" : "")" @onclick="() => ActiveChanged.InvokeAsync(id)">@label</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<(string Id, string Label)> Items { get; set; } = [];
+    [Parameter] public string Active { get; set; } = "";
+    [Parameter] public EventCallback<string> ActiveChanged { get; set; }
+}

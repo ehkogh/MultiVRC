@@ -1,0 +1,29 @@
+@if (Trust is { } trust)
+{
+    <span class="trust-slot">
+        <span class="trust @trust.Level.ToString().ToLowerInvariant() @(Compact ? "compact" : "")" tabindex="@(Compact ? -1 : 0)">
+            <Icon Name="@IconFor(trust.Level)" Size="15" />
+            @if (!Compact) { <span class="trust-text">@Text(trust.Level)</span> }
+        </span>
+    </span>
+}
+
+@code {
+    [Parameter] public Trust? Trust { get; set; }
+
+    [Parameter] public bool Compact { get; set; }
+
+    private static string IconFor(TrustLevel level) => level switch
+    {
+        TrustLevel.Official => "shield",
+        TrustLevel.Verified => "badge-check",
+        _ => "shield-alert",
+    };
+
+    private static string Text(TrustLevel level) => level switch
+    {
+        TrustLevel.Official => "Official VRChat · protected by Easy Anti-Cheat",
+        TrustLevel.Verified => "Verified community server",
+        _ => "Community server · not verified, take care",
+    };
+}

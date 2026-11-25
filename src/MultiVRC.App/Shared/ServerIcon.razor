@@ -1,0 +1,16 @@
+@inject ServerLook Look
+@if (Look.IconOf(Instance) is { } icon)
+{
+    var background = Look.IconBackgroundOf(Instance);
+    <img class="server-icon @Class @(background is null ? "" : "padded")" style="@(background is null ? null : $"background:{background}")"
+         src="@icon" alt="" loading="lazy" draggable="false" />
+}
+else
+{
+    <Cover Seed="@(Instance.ArtSeed ?? Instance.Id)" Name="@Instance.Name" Accent="@Instance.Accent" Class="@Class" />
+}
+
+@code {
+    [Parameter, EditorRequired] public Instance Instance { get; set; } = default!;
+    [Parameter] public string Class { get; set; } = "";
+}

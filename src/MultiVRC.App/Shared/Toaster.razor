@@ -1,0 +1,18 @@
+@implements IDisposable
+@inject Toasts Messages
+
+<div class="toasts" aria-live="polite">
+    @foreach (var toast in Messages.Shown)
+    {
+        <div class="toast @(toast.IsError ? "error" : "")">
+            <span>@toast.Message</span>
+            <button class="link close" @onclick="() => Messages.Dismiss(toast.Id)">✕</button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Messages.Changed += Refresh;
+    private void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Messages.Changed -= Refresh;
+}

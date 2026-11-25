@@ -1,0 +1,22 @@
+name: Idea
+description: Something the launcher could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The thing you can't do today, rather than the fix you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+  - type: checkboxes
+    id: eac
+    attributes:
+      label: Easy Anti-Cheat
+      options:
+        - label: This doesn't need official instances to be modified or touched while they run.
+          required: true

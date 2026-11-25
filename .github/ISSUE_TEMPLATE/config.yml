@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Get a server verified
+    url: https://multivrc.ehko.dev/#apply
+    about: Send your template's URL through the form on the website, not as an issue.
+  - name: Report a security problem
+    url: https://github.com/ehkogh/MultiVRC/security/advisories/new
+    about: Report it privately, please. Don't open a public issue.

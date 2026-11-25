@@ -1,0 +1,20 @@
+name = "multivrc"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+routes = [
+  { pattern = "multivrc.ehko.dev", custom_domain = true }
+]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "DATA"
+id = "01f1bb7964ca4133995b3ae005873992"
+
+[vars]
+GITHUB_REPO = "ehkogh/MultiVRC"
+TURNSTILE_SITE_KEY = ""

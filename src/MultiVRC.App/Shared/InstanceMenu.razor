@@ -1,0 +1,81 @@
+@implements IDisposable
+@inject InstanceActions Actions
+@inject LauncherState State
+@inject UpdateService Updater
+@inject Toasts Messages
+
+@if (Actions.MenuAt is { } at && Actions.InstanceId is { } id && State.Library.FindInstance(id) is { } instance)
+{
+    var running = State.Runner.Running?.Id == id;
+    var (x, y) = Place(at);
+    <div class="menu-backdrop" @onclick="Actions.CloseMenu" @oncontextmenu="Actions.CloseMenu" @oncontextmenu:preventDefault="true"></div>
+    <div class="context-menu" style="left:@(Px(x));top:@(Px(y))" @oncontextmenu:preventDefault="true"
+         @onkeydown='e => { if (e.Key == "Escape") Actions.CloseMenu(); }'>
+        <div class="context-title">@instance.Name</div>
+        @if (running)
+        {
+            <button class="context-item danger" @onclick="() => Do(() => State.Runner.Stop())"><Icon Name="stop" Size="15" /> Close game</button>
+        }
+        else if (Updater.PendingFor(id) is not null)
+        {
+            <button class="context-item" @onclick="() => Do(() => _ = Updater.ApplyAsync(id))"><Icon Name="download" Size="15" /> Update</button>
+            <button class="context-item" disabled="@(State.Runner.Running is not null)" @onclick="() => Do(() => Launch(instance))"><Icon Name="play" Size="15" /> Play this version</button>
+        }
+        else
+        {
+            <button class="context-item" disabled="@(State.Runner.Running is not null)" @onclick="() => Do(() => Launch(instance))"><Icon Name="play" Size="15" /> Play</button>
+            @if (instance.Kind == InstanceKind.Official)
+            {
+                <button class="context-item" disabled="@(State.Runner.Running is not null)" @onclick="() => Do(() => Launch(instance, LaunchMode.Desktop))"><Icon Name="monitor" Size="15" /> Play in desktop mode</button>
+                <button class="context-item" disabled="@(State.Runner.Running is not null)" @onclick="() => Do(() => Launch(instance, LaunchMode.WithoutAntiCheat))"><Icon Name="shield-off" Size="15" /> Play without anti-cheat</button>
+            }
+            @foreach (var play in State.Library.PlayModesOf(instance))
+            {
+                <button class="context-item" disabled="@(State.Runner.Running is not null)" @onclick="() => Do(() => Launch(instance, play: play))"><Icon Name="@Icon.Or(play.Icon)" Size="15" /> @play.Label</button>
+            }
+        }
+        <div class="context-sep"></div>
+        <div class="context-item has-sub" tabindex="0">
+            <Icon Name="folder" Size="15" /> Open folder <span class="context-arrow">›</span>
+            <div class="context-sub">
+                <button class="context-item" @onclick="() => Do(() => WindowActions.OpenFolder(State.Paths.InstanceGame(id)))">Game folder</button>
+                <button class="context-item" @onclick="() => Do(() => WindowActions.OpenFolder(State.Paths.InstanceData(id)))">Data folder</button>
+            </div>
+        </div>
+        <button class="context-item" @onclick="() => Actions.ShowDialog(id, InstanceActions.Dialog.Logs)"><Icon Name="file" Size="15" /> Logs</button>
+        <button class="context-item" @onclick="() => Actions.ShowDialog(id, InstanceActions.Dialog.Options)"><Icon Name="sliders" Size="15" /> Options</button>
+        <button class="context-item" @onclick="() => Actions.ShowDialog(id, InstanceActions.Dialog.Edit)"><Icon Name="sparkles" Size="15" /> Edit</button>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Actions.Changed += Refresh;
+        State.Changed += Refresh;
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private static (double X, double Y) Place((double X, double Y) at) => (Math.Min(at.X, 1360 - 420), Math.Min(at.Y, 800 - 270));
+
+    private static string Px(double value) => value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "px";
+
+    private void Do(Action action)
+    {
+        Actions.CloseMenu();
+        action();
+    }
+
+    private void Launch(Instance instance, LaunchMode mode = LaunchMode.Normal, TemplatePlayMode? play = null)
+    {
+        if (Messages.Try(() => State.Runner.Launch(instance, mode, play), $"Starting {instance.Name}{(play is null ? "" : $": {play.Label}")}…").Result && State.Settings.MinimizeOnLaunch && !State.Demo)
+            WindowActions.Minimize();
+    }
+
+    public void Dispose()
+    {
+        Actions.Changed -= Refresh;
+        State.Changed -= Refresh;
+    }
+}

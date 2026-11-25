@@ -1,0 +1,120 @@
+@page "/library"
+@implements IDisposable
+@inject LauncherState State
+@inject Toasts Messages
+@inject NavigationManager Navigation
+@inject Backdrop Background
+@inject InstanceActions Actions
+@inject IJSRuntime JS
+
+<div class="page-tools">
+    <button class="add-button" title="New instance" @onclick="OpenCreate"><Icon Name="plus" Size="20" /></button>
+</div>
+
+@if (_instances.Count == 0)
+{
+    <div class="library-empty">
+        <Icon Name="plus" Size="28" />
+        <h3>You need to create an instance first</h3>
+        <p class="muted">Each instance is its own VRChat, with its own files, data and login.</p>
+        <button class="primary" @onclick="OpenCreate"><Icon Name="plus" /> New instance</button>
+    </div>
+}
+else
+{
+    <div class="library-grid" @ref="_grid">
+        @foreach (var instance in _instances)
+        {
+            var running = State.Runner.Running?.Id == instance.Id;
+            var build = _builds.GetValueOrDefault(instance.BuildId);
+            <div class="game-card @(running ? "running" : "")" style="--accent-card:@instance.Accent" data-reorder-id="@instance.Id"
+                 @oncontextmenu="e => Actions.ShowMenu(instance.Id, e.ClientX, e.ClientY)" @oncontextmenu:preventDefault="true">
+                <AppLink class="game-cover" Href="@($"/instance/{instance.Id}")">
+                    <ServerIcon Instance="instance" Class="card-art" />
+                    <span class="card-trust"><TrustBadge Trust="@State.Verification.Of(instance, instance.TemplateId is { } t ? State.Library.FindTemplate(t) : null)" Compact="true" /></span>
+                    @if (running) { <span class="live-flag"><span class="live-dot"></span> Playing</span> }
+                </AppLink>
+                <div class="game-info">
+                    <div class="game-text">
+                        <div class="game-name">@instance.Name</div>
+                        <div class="game-sub">@instance.Server · @(build?.Version is { Length: > 0 } v ? v : build?.Name ?? "missing build")</div>
+                    </div>
+                    @if (running)
+                    {
+                        <button class="round stop" title="Close the game" @onclick="() => State.Runner.Stop()"><Icon Name="stop" Size="16" /></button>
+                    }
+                    else
+                    {
+                        <button class="round go" title="Play" disabled="@(State.Runner.Running is not null)" @onclick="() => LaunchAsync(instance)"><Icon Name="play" Size="16" /></button>
+                    }
+                </div>
+                <div class="game-foot">
+                    <span><Icon Name="clock" Size="12" /> @(running ? "now" : Format.Ago(instance.LastPlayedAt))</span>
+                    <span>@Format.Played(instance.TotalPlayed) played</span>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<NewInstanceDialog @bind-Open="_creating" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "new")] public int? NewFlag { get; set; }
+
+    private List<Instance> _instances = [];
+    private Dictionary<string, Build> _builds = [];
+    private bool _creating;
+
+    protected override void OnInitialized()
+    {
+        Background.Reset();
+        Load();
+        State.Changed += OnChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (NewFlag == 1 && !_creating) OpenCreate();
+    }
+
+    private void OnChanged() => InvokeAsync(() => { Load(); StateHasChanged(); });
+
+    private void Load()
+    {
+        _instances = State.Library.Instances();
+        _builds = State.Library.Builds().ToDictionary(b => b.Id);
+    }
+
+    private void OpenCreate() => _creating = true;
+
+    private ElementReference _grid;
+    private DotNetObjectReference<Instances>? _self;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_instances.Count == 0) return;
+        _self ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("multivrcReorder.attach", _grid, _self);
+    }
+
+    [JSInvokable]
+    public void Reorder(string draggedId, string targetId)
+    {
+        Actions.Dragging = draggedId;
+        Actions.DropOn(State.Library, targetId);
+        State.NotifyChanged();
+    }
+
+    private async Task LaunchAsync(Instance instance)
+    {
+        if (await Messages.Try(() => State.Runner.Launch(instance), $"Starting {instance.Name}…") && State.Settings.MinimizeOnLaunch && !State.Demo)
+            WindowActions.Minimize();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnChanged;
+        _self?.Dispose();
+    }
+}

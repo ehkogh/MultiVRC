@@ -1,0 +1,168 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject LauncherState State
+@inject Toasts Messages
+@inject Backdrop Background
+@inject NavigationManager Navigation
+@inject UpdateService Updater
+@inject LauncherUpdateService LauncherUpdates
+@inject InstanceActions Actions
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="app" style="--accent:@Background.Accent">
+    <div class="backdrop" aria-hidden="true">
+        @foreach (var (version, css) in _layers)
+        {
+            <div @key="version" class="backdrop-layer" style="background:@css"></div>
+        }
+        <div class="backdrop-shade"></div>
+        <div class="backdrop-grain"></div>
+    </div>
+
+    <TitleBar Title="MultiVRC" Demo="State.Demo" />
+
+    <nav class="rail">
+        <div class="rail-logo" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+                <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7cf0c4" /><stop offset="1" stop-color="#6aa8ff" /></linearGradient></defs>
+                <rect x="2" y="2" width="28" height="28" rx="10" fill="url(#lg)" />
+                <path d="M9 11.5 14 22l2-4.2M23 11.5 18 22" stroke="#0d1014" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+        </div>
+        <div class="rail-sep"></div>
+
+        <div class="rail-instances" @ref="_rail">
+            @foreach (var instance in _instances)
+            {
+                var active = _currentPath.StartsWith($"instance/{instance.Id}", StringComparison.Ordinal);
+                var live = State.Runner.Running?.Id == instance.Id;
+                <div class="rail-slot" data-reorder-id="@instance.Id"
+                     @oncontextmenu="e => Actions.ShowMenu(instance.Id, e.ClientX, e.ClientY)" @oncontextmenu:preventDefault="true">
+                <AppLink class="@(active ? "rail-tile active" : "rail-tile")" Href="@($"/instance/{instance.Id}")" data-tip="@instance.Name"
+                         style="@($"--accent-card:{instance.Accent}")">
+                    <ServerIcon Instance="instance" Class="tile" />
+                    @if (live) { <span class="rail-live"></span> }
+                    else if (Updater.Active?.InstanceId == instance.Id) { <span class="rail-updating"></span> }
+                    else if (Updater.PendingFor(instance.Id) is not null) { <span class="rail-update" title="Update available"></span> }
+                </AppLink>
+                </div>
+            }
+            <AppLink class="rail-tile add" Href="/library?new=1" data-tip="New instance"><span class="rail-add"><Icon Name="plus" Size="18" /></span></AppLink>
+        </div>
+
+        <div class="rail-bottom">
+            <AppLink class="rail-icon nav-library" Highlight="true" Prefix="true" Href="/library" data-tip="Library"><Icon Name="grid" Size="18" /></AppLink>
+            <AppLink class="rail-icon nav-builds" Highlight="true" Prefix="true" Href="/builds" data-tip="Builds"><Icon Name="box" Size="18" /></AppLink>
+            <AppLink class="rail-icon nav-settings" Highlight="true" Prefix="true" Href="/settings" data-tip="Settings"><Icon Name="settings" Size="18" /></AppLink>
+        </div>
+    </nav>
+
+    <main class="content">
+        <ErrorBoundary @ref="_boundary">
+            <ChildContent><div class="page-enter" @key="_currentPath">@Body</div></ChildContent>
+            <ErrorContent Context="error">
+                <div class="state-page">
+                    <div class="state-emoji">🫠</div>
+                    <h1>That went sideways</h1>
+                    <p class="muted">@error.Message</p>
+                    <button @onclick="() => _boundary?.Recover()">Try again</button>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
+    </main>
+
+    <div class="corner">
+        @if (State.CurrentDownload is { Finished: false } download)
+        {
+            <AppLink class="corner-pill" Href="/builds"><Icon Name="download" Size="13" /> Downloading @download.Name · @download.Percent.ToString("0")%</AppLink>
+        }
+        @if (State.Isolation.Current is { } swap)
+        {
+            <span class="corner-pill warn" title="VRChat's data folder and settings belong to this instance until the game closes; yours come back when it does">
+                <Icon Name="swap" Size="13" /> @(_instances.FirstOrDefault(i => i.Id == swap.InstanceId)?.Name ?? "An instance")'s data is in place
+            </span>
+        }
+        @if (_instances.FirstOrDefault(i => _currentPath.StartsWith($"instance/{i.Id}", StringComparison.Ordinal)) is { } shown)
+        {
+            <TrustBadge Trust="@State.Verification.Of(shown, shown.TemplateId is { } t ? State.Library.FindTemplate(t) : null)" />
+        }
+    </div>
+</div>
+<InstanceMenu />
+<InstanceDialogs />
+<Toaster />
+
+@code {
+    private ErrorBoundary? _boundary;
+    private List<Instance> _instances = [];
+    private string _currentPath = "";
+
+    private readonly List<(int Version, string Css)> _layers = [];
+
+    protected override void OnInitialized()
+    {
+        _instances = State.Library.Instances();
+        _currentPath = Navigation.ToBaseRelativePath(Navigation.Uri);
+        _layers.Add((Background.Version, Background.Css));
+        State.Changed += Refresh;
+        Updater.Changed += Refresh;
+        Updater.Start();
+        LauncherUpdates.Start();
+        Background.Changed += OnBackdrop;
+        Navigation.LocationChanged += OnLocationChanged;
+        if (State.StartupNotice is { } notice) Messages.Ok(notice);
+    }
+
+    private ElementReference _rail;
+    private DotNetObjectReference<MainLayout>? _self;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("multivrcReorder.attach", _rail, _self);
+    }
+
+    [JSInvokable]
+    public void Reorder(string draggedId, string targetId)
+    {
+        Actions.Dragging = draggedId;
+        Actions.DropOn(State.Library, targetId);
+        State.NotifyChanged();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _self?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private void OnBackdrop() => InvokeAsync(() =>
+    {
+        _layers.Add((Background.Version, Background.Css));
+        while (_layers.Count > 2) _layers.RemoveAt(0);
+        StateHasChanged();
+    });
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _currentPath = Navigation.ToBaseRelativePath(e.Location).Split('?')[0];
+        _boundary?.Recover();
+        StateHasChanged();
+    }
+
+    private void Refresh() => InvokeAsync(() =>
+    {
+        _instances = State.Library.Instances();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        State.Changed -= Refresh;
+        Updater.Changed -= Refresh;
+        Background.Changed -= OnBackdrop;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

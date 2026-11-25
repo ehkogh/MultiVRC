@@ -1,0 +1,280 @@
+@implements IDisposable
+@implements SteamKit2.Authentication.IAuthenticator
+@inject LauncherState State
+@inject Toasts Messages
+
+<Modal Open="Open" OpenChanged="CloseAsync" Title="@(_step == Step.SignIn ? "Sign in to Steam" : "Download from Steam")" Wide="true">
+    <ChildContent>
+        @if (_step == Step.Resuming)
+        {
+            <div class="steam-wait"><span class="spinner"></span> Signing in as @State.Steam.AccountName…</div>
+        }
+        else if (_step == Step.SignIn)
+        {
+            <p class="small muted">VRChat's builds come from Steam, so the account needs VRChat in its library (it is free). The launcher keeps the sign-in encrypted for your Windows account; it never keeps your password.</p>
+            <div class="steam-signin">
+                <div class="steam-form">
+                    @if (_guard is { } guard)
+                    {
+                        <div class="guard">
+                            <div class="guard-icon"><Icon Name="shield" Size="22" /></div>
+                            <b>Steam Guard</b>
+                            <div class="small muted">@guard.Prompt</div>
+                            @if (guard.NeedsCode)
+                            {
+                                <input class="code-input" @bind="_code" @bind:event="oninput" maxlength="5" placeholder="ABCDE" autocomplete="one-time-code"
+                                       @onkeydown='e => e.Key == "Enter" ? SendCode() : Task.CompletedTask' />
+                                <button class="primary" disabled="@(_code.Trim().Length < 5)" @onclick="SendCode">Continue</button>
+                            }
+                            else
+                            {
+                                <div class="steam-wait small"><span class="spinner"></span> Waiting for you to approve it…</div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <label>Account name</label>
+                        <input @bind="_username" @bind:event="oninput" autocomplete="username" />
+                        <label>Password</label>
+                        <input type="password" @bind="_password" @bind:event="oninput" autocomplete="current-password"
+                               @onkeydown='e => e.Key == "Enter" ? SignInAsync() : Task.CompletedTask' />
+                        @if (_error is not null) { <div class="form-error">@_error</div> }
+                        <button class="primary wide" disabled="@(_busy || _username.Trim().Length == 0 || _password.Length == 0)" @onclick="SignInAsync">
+                            @(_busy ? "Signing in…" : "Sign in")
+                        </button>
+                    }
+                </div>
+                <div class="steam-or"><span>or</span></div>
+                <div class="steam-qr">
+                    <div class="qr-frame @(_qrImage is null ? "loading" : "")">
+                        @if (_qrImage is { } image) { <img src="@image" alt="Steam sign-in QR code" draggable="false" /> }
+                        else { <span class="spinner"></span> }
+                    </div>
+                    <b>Sign in with the Steam app</b>
+                    <div class="small muted">Open the Steam app on your phone, tap the shield, and scan this code.</div>
+                    @if (_qrError is not null) { <div class="form-error">@_qrError <button class="link" @onclick="StartQr">Try again</button></div> }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="steam-account">
+                <SteamAvatar Label="Signed in to Steam as" />
+                <span class="spacer"></span>
+                <button class="ghost small" @onclick="SwitchAccount">Use another account</button>
+            </div>
+
+            <label>Which version</label>
+            <div class="seg">
+                <button class="@(!_byManifest ? "on" : "")" @onclick="() => _byManifest = false">The newest of a branch</button>
+                <button class="@(_byManifest ? "on" : "")" @onclick="() => _byManifest = true">An exact manifest</button>
+            </div>
+            @if (_byManifest)
+            {
+                <label>Manifest id <span class="muted">(depot 438101; SteamDB lists old ones)</span></label>
+                <input class="mono" @bind="_manifest" placeholder="e.g. 1234567890123456789" />
+            }
+            else
+            {
+                @if (_branches.Count == 0) { <div class="hint">@(_branchError ?? "Asking Steam for VRChat's branches…")</div> }
+                <div class="branch-picks">
+                    @foreach (var branch in _branches)
+                    {
+                        var have = State.Library.FindBuildByManifest(branch.ManifestId ?? "-") is not null;
+                        <button class="branch-pick @(_branch == branch.Name ? "on" : "")" disabled="@branch.PasswordRequired" @onclick="() => _branch = branch.Name">
+                            <b>@Updates.Label(branch.Name)</b>
+                            <span class="muted small">build @branch.BuildId · @Format.Ago(branch.Updated)@(have ? " · in your library" : "")@(branch.PasswordRequired ? " · needs a password" : "")</span>
+                        </button>
+                    }
+                </div>
+            }
+            <div class="field-row">
+                <div><label>Name</label><input @bind="_name" placeholder="@DefaultName" /></div>
+                <div><label>Version <span class="muted">(how templates find it)</span></label><input @bind="_version" placeholder="2026.4.1p1-1937" /></div>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="secondary" @onclick="() => CloseAsync(false)">Cancel</button>
+        @if (_step == Step.Pick)
+        {
+            <button class="primary" disabled="@(!CanDownload)" @onclick="DownloadAsync"><Icon Name="download" Size="15" /> Download</button>
+        }
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    private enum Step { Resuming, SignIn, Pick }
+
+    private sealed record GuardQuestion(string Prompt, bool NeedsCode, TaskCompletionSource<string>? Answer);
+
+    private Step _step = Step.SignIn;
+    private bool _wasOpen, _busy, _byManifest;
+    private string _username = "", _password = "", _code = "", _manifest = "", _branch = "public", _name = "", _version = "";
+    private string? _error, _qrImage, _qrError, _branchError;
+    private GuardQuestion? _guard;
+    private CancellationTokenSource? _qr;
+    private IReadOnlyList<SteamBranch> _branches = [];
+
+    private string DefaultName => _byManifest ? $"Manifest {_manifest.Trim()}" : $"VRChat ({Updates.Label(_branch)})";
+
+    private bool CanDownload => _byManifest
+        ? _manifest.Trim().Length > 0 && _manifest.Trim().All(char.IsDigit)
+        : _branches.FirstOrDefault(b => b.Name == _branch) is { ManifestId: not null, PasswordRequired: false };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            _error = _qrError = null;
+            _guard = null;
+            _password = _code = "";
+            if (State.Steam.SignedIn) await ShowPickAsync();
+            else if (State.Steam.HasSavedLogin)
+            {
+                _step = Step.Resuming;
+                StateHasChanged();
+                if (await State.Steam.ResumeAsync()) await ShowPickAsync();
+                else ShowSignIn();
+            }
+            else ShowSignIn();
+        }
+        else if (!Open && _wasOpen)
+        {
+            _wasOpen = false;
+            _qr?.Cancel();
+        }
+    }
+
+    private void ShowSignIn()
+    {
+        _step = Step.SignIn;
+        _username = State.Steam.AccountName ?? "";
+        StartQr();
+    }
+
+    private async Task ShowPickAsync()
+    {
+        _qr?.Cancel();
+        _step = Step.Pick;
+        StateHasChanged();
+        try { _branches = await State.Branches.GetAsync(); _branchError = null; }
+        catch (Exception e) when (e is InvalidOperationException or TimeoutException) { _branchError = e.Message; }
+        StateHasChanged();
+    }
+
+    private void StartQr()
+    {
+        _qr?.Cancel();
+        _qr = new CancellationTokenSource();
+        _qrImage = null;
+        _qrError = null;
+        var token = _qr.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await State.Steam.SignInWithQrAsync(url => InvokeAsync(() => { _qrImage = QrImage(url); StateHasChanged(); }), token);
+                await InvokeAsync(async () => { Messages.Ok($"Signed in to Steam as {State.Steam.AccountName}."); await ShowPickAsync(); });
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception e) when (e is InvalidOperationException or TimeoutException or SteamKit2.Authentication.AuthenticationException)
+            {
+                await InvokeAsync(() => { _qrError = $"The QR sign-in stopped: {e.Message}"; _qrImage = null; StateHasChanged(); });
+            }
+        });
+    }
+
+    private static string QrImage(string url)
+    {
+        using var generator = new QRCoder.QRCodeGenerator();
+        using var data = generator.CreateQrCode(url, QRCoder.QRCodeGenerator.ECCLevel.M);
+        var png = new QRCoder.PngByteQRCode(data).GetGraphic(8, [11, 13, 18, 255], [255, 255, 255, 255], true);
+        return $"data:image/png;base64,{Convert.ToBase64String(png)}";
+    }
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await State.Steam.SignInAsync(_username.Trim(), _password, this);
+            _password = "";
+            Messages.Ok($"Signed in to Steam as {State.Steam.AccountName}.");
+            await ShowPickAsync();
+        }
+        catch (Exception e) when (e is InvalidOperationException or TimeoutException or SteamKit2.Authentication.AuthenticationException)
+        {
+            _error = e is SteamKit2.Authentication.AuthenticationException auth ? $"Steam said no: {auth.Result}" : e.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _guard = null;
+        }
+    }
+
+    private Task SendCode()
+    {
+        _guard?.Answer?.TrySetResult(_code.Trim().ToUpperInvariant());
+        _code = "";
+        return Task.CompletedTask;
+    }
+
+    public Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect) =>
+        Ask(previousCodeWasIncorrect ? "That code did not work. Enter the new one from your Steam app." : "Enter the code from the Steam app on your phone.");
+
+    public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect) =>
+        Ask(previousCodeWasIncorrect ? $"That code did not work. Enter the new one Steam sent to {email}." : $"Enter the code Steam sent to {email}.");
+
+    public Task<bool> AcceptDeviceConfirmationAsync()
+    {
+        InvokeAsync(() => { _guard = new GuardQuestion("Approve this sign-in in the Steam app on your phone.", false, null); StateHasChanged(); });
+        return Task.FromResult(true);
+    }
+
+    private Task<string> Ask(string prompt)
+    {
+        var answer = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        InvokeAsync(() => { _guard = new GuardQuestion(prompt, true, answer); _code = ""; StateHasChanged(); });
+        return answer.Task;
+    }
+
+    private void SwitchAccount()
+    {
+        State.Steam.SignOut();
+        ShowSignIn();
+    }
+
+    private async Task DownloadAsync()
+    {
+        var picked = _byManifest ? null : _branches.FirstOrDefault(b => b.Name == _branch);
+        var manifest = _byManifest ? _manifest.Trim() : picked!.ManifestId!;
+        var name = _name.Trim().Length > 0 ? _name.Trim() : DefaultName;
+        var ok = await Messages.Try(() => State.StartDownload(new DepotRequest(manifest, _byManifest ? "public" : _branch, name, _version.Trim(), picked?.BuildId)));
+        if (ok) await CloseAsync(false);
+    }
+
+    private Task CloseAsync(bool open)
+    {
+        if (!open)
+        {
+            _qr?.Cancel();
+            _guard?.Answer?.TrySetCanceled();
+        }
+        return OpenChanged.InvokeAsync(open);
+    }
+
+    public void Dispose()
+    {
+        _qr?.Cancel();
+        _guard?.Answer?.TrySetCanceled();
+    }
+}

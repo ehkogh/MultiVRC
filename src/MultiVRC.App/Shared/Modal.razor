@@ -1,0 +1,40 @@
+@if (Open)
+{
+    <div class="modal-backdrop" @onclick="CloseAsync"></div>
+    <div class="modal @(Wide ? "wide" : "")" role="dialog" aria-modal="true" aria-label="@Title" tabindex="-1"
+         @ref="_dialog" @onkeydown="KeyAsync">
+        <div class="modal-head">
+            <h2>@Title</h2>
+            <span class="spacer"></span>
+            <button class="link close" aria-label="Close" @onclick="CloseAsync">✕</button>
+        </div>
+        <div class="modal-body">@ChildContent</div>
+        @if (Footer is not null) { <div class="modal-foot">@Footer</div> }
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public bool Wide { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private ElementReference _dialog;
+    private bool _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && !_focused)
+        {
+            _focused = true;
+            try { await _dialog.FocusAsync(); } catch (InvalidOperationException) { }
+        }
+        if (!Open) _focused = false;
+    }
+
+    private Task KeyAsync(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+
+    private Task CloseAsync() => OpenChanged.InvokeAsync(false);
+}

@@ -1,0 +1,33 @@
+@implements IDisposable
+<button class="@Class @(_armed ? "armed" : "")" disabled="@Disabled" @onclick="ClickAsync">
+    @if (_armed) { @Confirm } else { @ChildContent }
+</button>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public string Class { get; set; } = "danger";
+    [Parameter] public string Confirm { get; set; } = "Click again to confirm";
+    [Parameter] public bool Disabled { get; set; }
+    private bool _armed;
+    private CancellationTokenSource? _disarm;
+
+    private async Task ClickAsync()
+    {
+        if (!_armed)
+        {
+            _armed = true;
+            _disarm?.Cancel();
+            _disarm = new();
+            var token = _disarm.Token;
+            _ = Task.Delay(4000, token).ContinueWith(_ => InvokeAsync(() => { _armed = false; StateHasChanged(); }),
+                token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+            return;
+        }
+        _disarm?.Cancel();
+        _armed = false;
+        await OnConfirm.InvokeAsync();
+    }
+
+    public void Dispose() => _disarm?.Cancel();
+}

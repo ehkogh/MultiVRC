@@ -1,0 +1,311 @@
+@inject LauncherState State
+@inject Toasts Messages
+@inject NavigationManager Navigation
+
+<Modal Open="Open" OpenChanged="CloseAsync" Title="New instance" Wide="true">
+    <ChildContent>
+        <div class="new-instance">
+            <div class="choice-list">
+                @foreach (var group in _options.GroupBy(o => o.Group))
+                {
+                    <div class="choice-group">@group.Key</div>
+                    @foreach (var option in group)
+                    {
+                        <button class="choice @(option.Key == _selected?.Key ? "on" : "")" disabled="@_busy" @onclick="() => SelectAsync(option)">
+                            <span class="choice-art">
+                                @if (option.Custom) { <span class="choice-plus"><Icon Name="plus" Size="16" /></span> }
+                                else if (option.IconUrl is { } icon) { <img src="@icon" alt="" draggable="false" class="@(option.IconBackground is null ? "" : "padded")" style="@(option.IconBackground is null ? null : $"background:{option.IconBackground}")" /> }
+                                else { <Cover Seed="@option.ArtSeed" Name="@option.Name" Accent="@option.Accent" /> }
+                            </span>
+                            <span class="choice-text">
+                                <b>@option.Name</b>
+                                <span class="muted small">@option.Subtitle</span>
+                            </span>
+                            @if (option.Trust is { } trust) { <TrustBadge Trust="trust" Compact="true" /> }
+                        </button>
+                    }
+                }
+                @if (_installing)
+                {
+                    <div class="install-row">
+                        <input @bind="_templateUrl" @bind:event="oninput" placeholder="https://your-server.example/multivrc.json"
+                               @onkeydown='e => e.Key == "Enter" ? InstallAsync() : Task.CompletedTask' />
+                        <button class="secondary" disabled="@(_templateUrl.Trim().Length == 0)" @onclick="InstallAsync">Add</button>
+                    </div>
+                }
+                else
+                {
+                    <button class="link add-template" @onclick="() => _installing = true">+ Add a server by its template URL</button>
+                }
+            </div>
+
+            @if (_selected is { } chosen)
+            {
+                <div class="choice-detail">
+                    <div class="identity">
+                        <div class="square-art @(chosen.Custom ? "editable" : "")">
+                            @if (!chosen.Custom && chosen.IconUrl is { } icon) { <img src="@icon" alt="" draggable="false" class="@(chosen.IconBackground is null ? "" : "padded")" style="@(chosen.IconBackground is null ? null : $"background:{chosen.IconBackground}")" /> }
+                            else
+                            {
+                                <Cover Seed="@(chosen.Custom ? _artSeed : chosen.ArtSeed)" Name="@Name" Accent="@(chosen.Custom ? _accent : chosen.Accent)">
+                                    @if (chosen.Custom) { <button class="reroll" title="New art" @onclick="() => _artSeed = Guid.NewGuid().ToString()">🎲</button> }
+                                </Cover>
+                            }
+                            @if (!chosen.Custom) { <span class="art-lock" title="Set by the server"><Icon Name="lock" Size="12" /></span> }
+                        </div>
+                        <div class="identity-text">
+                            <label>Name</label>
+                            <input class="name-input" @bind="_name" @bind:event="oninput" placeholder="@chosen.Name" />
+                            @if (chosen.Custom)
+                            {
+                                <div class="swatches">
+                                    @foreach (var colour in Art.Palette)
+                                    {
+                                        <button class="swatch @(colour == _accent ? "on" : "")" style="background:@colour" @onclick="() => _accent = colour"></button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="small muted">@chosen.Description</div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (chosen.Custom)
+                    {
+                        <label>Version</label>
+                        <select @bind="_buildId">
+                            @foreach (var build in _builds) { <option value="@build.Id">@build.Name @(build.Version.Length > 0 ? $"· {build.Version}" : "")</option> }
+                        </select>
+                        @if (_builds.Count == 0) { <div class="hint">No builds yet: add one on the Builds page.</div> }
+                    }
+                    else
+                    {
+                        <div class="uses-build">
+                            <Icon Name="box" Size="15" />
+                            <span>@_plan.Description</span>
+                        </div>
+                    }
+
+                    @if (chosen.Template is { Downloads.Count: > 0 } template)
+                    {
+                        <div class="notice warn small">
+                            <b>This server installs:</b>
+                            <ul>@foreach (var download in template.Downloads) { <li><code>@download.Url</code>@(download.Sha256 is null ? " (no checksum!)" : "")</li> }</ul>
+                            These files run with the game: only use servers you trust.
+                        </div>
+                    }
+
+                    @if (_progress is not null)
+                    {
+                        <div class="create-progress">
+                            <div class="small">@_progress</div>
+                            @if (_percent is { } percent) { <div class="progress"><span style="width:@(percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></div> }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="primary" disabled="@(!CanCreate)" @onclick="CreateAsync">@(_busy ? "Creating…" : "Create instance")</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    private sealed record Option(string Key, string Group, string Name, string Subtitle, string Description,
+        Template? Template, VerifiedServer? Verified, SteamBranch? Branch, bool Custom, Trust? Trust,
+        string ArtSeed, string Accent, string? IconUrl, string? IconBackground = null);
+
+    private sealed record Plan(Build? Existing, DepotRequest? Download, string Description);
+
+    private List<Option> _options = [];
+    private List<Build> _builds = [];
+    private Option? _selected;
+    private Plan _plan = new(null, null, "");
+    private bool _wasOpen, _busy, _installing;
+    private string _name = "", _buildId = "", _templateUrl = "", _accent = Art.RandomAccent(), _artSeed = Guid.NewGuid().ToString();
+    private string? _progress;
+    private double? _percent;
+
+    private string Name => _name.Trim().Length > 0 ? _name.Trim() : _selected?.Name ?? "My instance";
+
+    private bool CanCreate => !_busy && _selected is { } chosen
+        && (chosen.Custom ? _buildId.Length > 0 : _plan.Existing is not null || _plan.Download is not null);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            _name = _templateUrl = "";
+            _progress = null;
+            _percent = null;
+            _installing = false;
+            _accent = Art.RandomAccent();
+            _artSeed = Guid.NewGuid().ToString();
+            await LoadAsync();
+            await SelectAsync(_options.FirstOrDefault());
+        }
+        else if (!Open) _wasOpen = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _builds = State.Library.Builds();
+        _buildId = _builds.FirstOrDefault()?.Id ?? "";
+        IReadOnlyList<SteamBranch> branches = [];
+        try { branches = await State.Branches.GetAsync(); }
+        catch (Exception e) when (e is InvalidOperationException or TimeoutException) { }
+
+        var options = new List<Option>();
+        var official = State.Library.FindTemplate("vrchat-official");
+
+        foreach (var branch in branches.Where(b => !b.PasswordRequired).DefaultIfEmpty())
+        {
+            var name = branch is null || branch.Name == "public" ? "VRChat" : $"VRChat {Pretty(branch)}";
+            var template = branch is null || branch.Name == "public" ? official! : OfficialFor(branch, official!);
+            options.Add(new Option(template.Id, "Official", name,
+                branch is null ? "The release" : branch.Name == "public" ? $"The release · build {branch.BuildId}" : $"{Pretty(branch)} · build {branch.BuildId}",
+                "VRChat as Steam ships it. Never modified; protected by Easy Anti-Cheat.",
+                template, null, branch, false, new Trust(TrustLevel.Official, null), template.Id, template.Accent, template.Branding.IconUrl, template.Branding.IconBackground));
+        }
+
+        foreach (var template in State.Library.Templates().Where(t => t.Kind == InstanceKind.Modded).OrderBy(t => t.Name))
+            options.Add(new Option(template.Id, "Your servers", template.Name, template.Branding.Tagline.Length > 0 ? template.Branding.Tagline : template.Server,
+                template.Description, template, null, null, false, State.Verification.Of(template), template.Id, template.Accent, template.Branding.IconUrl, template.Branding.IconBackground));
+
+        var installed = State.Library.Templates().Select(t => t.SourceUrl).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var server in State.Verification.Servers.Where(s => !installed.Contains(s.TemplateUrl)))
+            options.Add(new Option($"verified:{server.TemplateUrl}", "Verified community", server.Name, "Not added yet",
+                server.Note, null, server, null, false, new Trust(TrustLevel.Verified, server), server.TemplateUrl, "#6aa8ff", null));
+
+        options.Add(new Option("custom", "Custom", "Custom", "Any build, your own look", "", null, null, null, true, null, "", "#3fb68b", null));
+        _options = options;
+    }
+
+    private static Template OfficialFor(SteamBranch branch, Template official) => new()
+    {
+        Id = $"vrchat-{branch.Name}", Name = $"VRChat {Pretty(branch)}", Server = "VRChat", Kind = InstanceKind.Official,
+        Description = official.Description, Accent = "#5b9be0", ShareCache = true,
+        Build = new TemplateBuild { Branch = branch.Name }, Branding = official.Branding,
+    };
+
+    private static string Pretty(SteamBranch branch) =>
+        branch.Description.Length > 0 ? branch.Description
+            : string.Join(' ', branch.Name.Split('-', '_').Select(w => w.Length > 0 ? char.ToUpperInvariant(w[0]) + w[1..] : w));
+
+    private async Task SelectAsync(Option? option)
+    {
+        if (option is null) return;
+        if (option.Verified is { } server)
+        {
+            _busy = true;
+            _progress = $"Adding {server.Name}…";
+            Template? added = null;
+            var ok = await Messages.TryAsync(async () => added = await State.Library.InstallTemplateAsync(server.TemplateUrl));
+            _busy = false;
+            _progress = null;
+            if (!ok) return;
+            await LoadAsync();
+            option = _options.First(o => o.Template?.Id == added!.Id);
+        }
+        _selected = option;
+        _name = "";
+        _plan = await PlanAsync(option);
+    }
+
+    private async Task<Plan> PlanAsync(Option option)
+    {
+        if (option.Custom) return new Plan(null, null, "");
+        var wanted = option.Template?.Build ?? new TemplateBuild();
+        var branchName = option.Branch?.Name ?? wanted.Branch ?? (option.Template?.Kind == InstanceKind.Official ? "public" : null);
+        SteamBranch? branch = option.Branch;
+        if (branch is null && branchName is not null)
+        {
+            try { branch = (await State.Branches.GetAsync()).FirstOrDefault(b => b.Name == branchName); }
+            catch (Exception e) when (e is InvalidOperationException or TimeoutException) { }
+        }
+
+        var manifest = wanted.ManifestId is { Length: > 0 } m ? m : branch?.ManifestId;
+        var existing = (manifest is null ? null : State.Library.FindBuildByManifest(manifest))
+                       ?? (wanted.Version.Length > 0 ? _builds.FirstOrDefault(b => b.Version == wanted.Version) : null)
+                       ?? (manifest is null && branchName is not null ? _builds.Where(b => b.Branch == branchName).OrderByDescending(b => b.AddedAt).FirstOrDefault() : null);
+        if (existing is not null) return new Plan(existing, null, $"Uses {existing.Name}{(existing.Version.Length > 0 ? $" ({existing.Version})" : "")} from your builds.");
+        if (manifest is not null)
+        {
+            var label = branchName is null ? $"manifest {manifest}" : $"the newest {Updates.Label(branchName)} build{(branch is null ? "" : $" ({branch.BuildId})")}";
+            var name = branchName is null ? $"VRChat {manifest}" : $"VRChat ({Updates.Label(branchName)}) {branch?.BuildId}";
+            return new Plan(null, new DepotRequest(manifest, branchName ?? "public", name.Trim(), wanted.Version, branch?.BuildId),
+                $"Downloads {label} from Steam first.");
+        }
+        return new Plan(null, null, $"Needs VRChat {wanted.Version}, which is not in your builds and the server gives no way to download it.");
+    }
+
+    private async Task InstallAsync()
+    {
+        Template? added = null;
+        if (!await Messages.TryAsync(async () => added = await State.Library.InstallTemplateAsync(_templateUrl.Trim()), "Server added.")) return;
+        _installing = false;
+        _templateUrl = "";
+        await LoadAsync();
+        await SelectAsync(_options.FirstOrDefault(o => o.Template?.Id == added!.Id));
+        State.NotifyChanged();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_selected is not { } chosen) return;
+        _busy = true;
+        try
+        {
+            var buildId = chosen.Custom ? _buildId : _plan.Existing?.Id;
+            if (buildId is null && _plan.Download is { } request)
+            {
+                if (!await State.Steam.ResumeAsync())
+                {
+                    Messages.Error("Sign in to Steam first: Builds → + → Download from Steam. Then create it again.");
+                    return;
+                }
+                _progress = $"Downloading {request.Name}…";
+                var download = State.StartDownload(request);
+                download.Changed += () => InvokeAsync(() => { _percent = download.Percent; _progress = $"Downloading · {download.Status}"; StateHasChanged(); });
+                var build = await download.Done;
+                if (build is null) { Messages.Error(download.Error ?? "The download did not finish."); return; }
+                buildId = build.Id;
+            }
+            if (buildId is null) return;
+
+            if (chosen.Template is { } template && State.Library.FindTemplate(template.Id) is null) State.Library.SaveTemplate(template);
+            _progress = "Setting it up…";
+            _percent = null;
+            var name = Name;
+            var progress = new Progress<string>(p => InvokeAsync(() => { _progress = p; StateHasChanged(); }));
+            Instance? created = null;
+            var ok = await Messages.TryAsync(async () =>
+            {
+                created = await Task.Run(() => State.Library.CreateInstanceAsync(name, buildId, chosen.Template, progress));
+                created.Accent = chosen.Custom ? _accent : chosen.Accent;
+                created.ArtSeed = chosen.Custom ? _artSeed : chosen.ArtSeed;
+                State.Library.SaveInstance(created);
+            }, $"{name} is ready.");
+            if (!ok) return;
+            await OpenChanged.InvokeAsync(false);
+            State.NotifyChanged();
+            Navigation.NavigateTo($"/instance/{created!.Id}");
+        }
+        finally
+        {
+            _busy = false;
+            _progress = null;
+            _percent = null;
+        }
+    }
+
+    private Task CloseAsync(bool open) => _busy ? Task.CompletedTask : OpenChanged.InvokeAsync(open);
+}

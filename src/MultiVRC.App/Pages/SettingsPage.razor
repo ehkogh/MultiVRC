@@ -1,0 +1,190 @@
+@page "/settings"
+@implements IDisposable
+@inject LauncherState State
+@inject Toasts Messages
+@inject Backdrop Background
+@inject UpdateService Updater
+@inject LauncherUpdateService LauncherUpdates
+@inject IJSRuntime JS
+
+<div class="settings">
+    <nav class="settings-nav" @ref="_nav">
+        @foreach (var (id, label, icon) in Sections)
+        {
+            <button class="settings-tab" data-target="settings-@id"><Icon Name="@icon" Size="16" /> @label</button>
+        }
+        <div class="settings-about">
+            <b>MultiVRC @LauncherState.Version</b>
+            <span>made with 💖 by ehko</span>
+        </div>
+    </nav>
+
+    <div class="settings-body">
+        <section class="settings-section" id="settings-general">
+            <h2 class="settings-title">General</h2>
+            <div class="setting">
+                <div class="setting-text"><b>Minimise when a game starts</b><span>Moves the launcher out of the way while you play.</span></div>
+                <Toggle Value="State.Settings.MinimizeOnLaunch" ValueChanged="v => Change(s => s.MinimizeOnLaunch = v)" />
+            </div>
+        </section>
+
+        <section class="settings-section" id="settings-steam">
+            <h2 class="settings-title">Steam account</h2>
+            <div class="setting">
+                @if (State.Steam.AccountName is not null)
+                {
+                    <SteamAvatar />
+                    <button class="secondary" @onclick="SignOut">Sign out</button>
+                }
+                else
+                {
+                    <div class="setting-text"><b>Not signed in</b><span>Downloading builds and updates needs a Steam account with VRChat in its library.</span></div>
+                    <button class="primary" @onclick="() => _signingIn = true">Sign in</button>
+                }
+            </div>
+            <div class="setting-note">The launcher keeps the sign-in as Steam's own login token, encrypted for your Windows account. It never keeps your password.</div>
+        </section>
+
+        <section class="settings-section" id="settings-updates">
+            <h2 class="settings-title">Updates</h2>
+            <div class="setting">
+                <div class="setting-text"><b>Update automatically</b><span>Install updates as soon as they are found, for instances that allow it. Nothing updates while it is running.</span></div>
+                <Toggle Value="State.Settings.AutoUpdate" ValueChanged="v => Change(s => s.AutoUpdate = v)" />
+            </div>
+            <div class="setting">
+                <div class="setting-text"><b>Check for updates</b><span>@(Updater.LastChecked is { } at ? $"Last checked {Format.Ago(at)}. " : "")Official instances follow their Steam branch; servers are checked at their template URL. Also every half hour.</span></div>
+                <button class="secondary" disabled="@Updater.Checking" @onclick="() => Updater.CheckAsync(auto: true)">@(Updater.Checking ? "Checking…" : "Check now")</button>
+            </div>
+            @foreach (var problem in Updater.Problems) { <div class="notice warn small">@problem</div> }
+        </section>
+
+        <section class="settings-section" id="settings-multivrc">
+            <h2 class="settings-title">MultiVRC</h2>
+            <div class="setting">
+                <div class="setting-text"><b>Version @LauncherState.Version</b><span>@LauncherStatus</span></div>
+                @switch (LauncherUpdates.Status)
+                {
+                    case LauncherUpdateService.Phase.Ready:
+                        <button class="primary" @onclick="LauncherUpdates.InstallAndRestart">Restart to update</button>
+                        break;
+                    case LauncherUpdateService.Phase.Available:
+                        <button class="primary" @onclick="LauncherUpdates.DownloadAsync">Download</button>
+                        break;
+                    case LauncherUpdateService.Phase.Downloading:
+                        <button class="secondary" disabled>@LauncherUpdates.Percent.ToString("0")%</button>
+                        break;
+                    default:
+                        <button class="secondary" disabled="@(!LauncherUpdates.Supported || LauncherUpdates.Status == LauncherUpdateService.Phase.Checking)"
+                                @onclick="() => LauncherUpdates.CheckAsync()">@(LauncherUpdates.Status == LauncherUpdateService.Phase.Checking ? "Checking…" : "Check now")</button>
+                        break;
+                }
+            </div>
+            @if (LauncherUpdates.Latest is { Notes.Length: > 0 } release && LauncherUpdates.Status is LauncherUpdateService.Phase.Available or LauncherUpdateService.Phase.Downloading or LauncherUpdateService.Phase.Ready)
+            {
+                <div class="setting-note"><b>What's new in @release.Version:</b> @release.Notes</div>
+            }
+            <div class="setting">
+                <div class="setting-text"><b>Update MultiVRC automatically</b><span>Downloads new versions in the background and installs them the next time MultiVRC starts.</span></div>
+                <Toggle Value="State.Settings.UpdateLauncher" Disabled="!LauncherUpdates.Supported" ValueChanged="v => Change(s => s.UpdateLauncher = v)" />
+            </div>
+            <div class="setting">
+                <div class="setting-text"><b>Get pre-releases</b><span>Try new versions before everyone else. They can have rough edges.</span></div>
+                <Toggle Value="State.Settings.LauncherPrereleases" Disabled="!LauncherUpdates.Supported" ValueChanged="SetPrereleases" />
+            </div>
+        </section>
+
+        <section class="settings-section" id="settings-storage">
+            <h2 class="settings-title">Storage</h2>
+            <div class="setting">
+                <div class="setting-text"><b>Launcher folder</b><span class="mono-path">@State.Paths.Root</span></div>
+                <button class="secondary" @onclick="() => WindowActions.OpenFolder(State.Paths.Root)">Open</button>
+            </div>
+            <div class="setting">
+                <div class="setting-text"><b>Download cache</b><span>@Format.Size(_cacheSize) of worlds and avatars, shared between instances of the same server (never across servers). Clearing it only means downloading them again.</span></div>
+                <ConfirmButton Class="secondary" Disabled="@(_cacheSize == 0 || State.Runner.Running is not null)" OnConfirm="ClearCache" Confirm="Clear it?">Clear</ConfirmButton>
+            </div>
+            <div class="setting-note">Builds, instances and the cache must stay on one drive: instances share their build's files instead of copying them.</div>
+        </section>
+    </div>
+</div>
+
+<SteamDownloadDialog Open="_signingIn" OpenChanged="v => _signingIn = v" />
+
+@code {
+    private static readonly (string Id, string Label, string Icon)[] Sections =
+    [
+        ("general", "General", "settings"),
+        ("steam", "Steam account", "lock"),
+        ("updates", "Updates", "download"),
+        ("multivrc", "MultiVRC", "sparkles"),
+        ("storage", "Storage", "folder"),
+    ];
+
+    private ElementReference _nav;
+    private bool _signingIn;
+    private long _cacheSize;
+
+    protected override void OnInitialized()
+    {
+        Background.Reset();
+        _cacheSize = FileLinks.SizeOf(State.Paths.SharedCache);
+        State.Changed += Refresh;
+        Updater.Changed += Refresh;
+        LauncherUpdates.Changed += Refresh;
+    }
+
+    private string LauncherStatus => LauncherUpdates.Status switch
+    {
+        _ when !LauncherUpdates.Supported => "Development builds don't update themselves.",
+        LauncherUpdateService.Phase.Checking => "Checking for a new version…",
+        LauncherUpdateService.Phase.UpToDate => $"Up to date. Checked {Format.Ago(LauncherUpdates.LastChecked)}.",
+        LauncherUpdateService.Phase.Available => $"MultiVRC {LauncherUpdates.Latest?.Version} is available.",
+        LauncherUpdateService.Phase.Downloading => $"Downloading MultiVRC {LauncherUpdates.Latest?.Version}…",
+        LauncherUpdateService.Phase.Ready => $"MultiVRC {LauncherUpdates.ReadyVersion} is downloaded and installs when MultiVRC restarts.",
+        LauncherUpdateService.Phase.Failed => $"Couldn't check for a new version: {LauncherUpdates.Error}",
+        _ => "Checks for new versions when MultiVRC starts and every few hours.",
+    };
+
+    private async Task SetPrereleases(bool value)
+    {
+        Change(s => s.LauncherPrereleases = value);
+        await LauncherUpdates.CheckAsync();
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("multivrcSettings.attach", _nav);
+    }
+
+    private void Change(Action<Settings> change)
+    {
+        var settings = State.Settings;
+        change(settings);
+        State.SaveSettings(settings);
+    }
+
+    private void SignOut()
+    {
+        State.Steam.SignOut();
+        Messages.Ok("Signed out of Steam; the kept sign-in is deleted.");
+    }
+
+    private void ClearCache()
+    {
+        Messages.Try(() =>
+        {
+            FileLinks.DeleteTree(State.Paths.SharedCache);
+            Directory.CreateDirectory(State.Paths.SharedCache);
+        }, "Download cache cleared.");
+        _cacheSize = FileLinks.SizeOf(State.Paths.SharedCache);
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= Refresh;
+        Updater.Changed -= Refresh;
+        LauncherUpdates.Changed -= Refresh;
+    }
+}

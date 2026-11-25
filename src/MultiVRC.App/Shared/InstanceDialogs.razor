@@ -1,0 +1,346 @@
+@implements IDisposable
+@inject InstanceActions Actions
+@inject LauncherState State
+@inject UpdateService Updater
+@inject ServerLook Look
+@inject Backdrop Background
+@inject BackdropPictures Pictures
+@inject Toasts Messages
+@inject NavigationManager Navigation
+
+<Modal Open="Actions.Open == InstanceActions.Dialog.Edit" OpenChanged="Close" Title="@($"Edit {_instance?.Name}")">
+    <ChildContent>
+        @if (_instance is { } instance)
+        {
+            <div class="edit-look">
+                <div class="square-art @(Locked ? "" : "editable")">
+                    @if (Locked) { <ServerIcon Instance="instance" /> <span class="art-lock" title="Set by the server"><Icon Name="lock" Size="12" /></span> }
+                    else
+                    {
+                        <Cover Seed="@_artSeed" Name="@_name" Accent="@_accent">
+                            <button class="reroll" title="New art" @onclick="() => _artSeed = Guid.NewGuid().ToString()">🎲</button>
+                        </Cover>
+                    }
+                </div>
+                <div class="identity-text">
+                    <label>Name</label>
+                    <input class="name-input" @bind="_name" @bind:event="oninput" />
+                    <div class="swatches">
+                        @foreach (var colour in Art.Palette)
+                        {
+                            <button class="swatch @(colour == _accent ? "on" : "")" style="background:@colour" title="Its colour" @onclick="() => _accent = colour"></button>
+                        }
+                    </div>
+                </div>
+            </div>
+            <label>Background</label>
+            <div class="tabbar compact">
+                @foreach (var (mode, label) in BackgroundModes)
+                {
+                    <button class="@(instance.BackgroundMode == mode ? "on" : "")" @onclick="() => SetBackgroundMode(mode)">@label</button>
+                }
+            </div>
+            @if (instance.BackgroundMode == BackgroundMode.Pictures)
+            {
+                <div class="background-pictures">
+                    @foreach (var path in _pictures)
+                    {
+                        <div class="background-thumb" style="@ThumbStyle(path)">
+                            <button class="round" title="Remove" @onclick="() => RemovePictureAsync(path)"><Icon Name="x" Size="14" /></button>
+                        </div>
+                    }
+                    <button class="background-add" title="Add pictures" @onclick="AddPicturesAsync"><Icon Name="plus" Size="20" /><span>Add</span></button>
+                </div>
+                @if (_pictures.Count == 0) { <div class="hint">Add some pictures to start the slideshow. Until then the server's picture shows.</div> }
+            }
+            else if (instance.BackgroundMode == BackgroundMode.VRChatPhotos)
+            {
+                <div class="hint">@PhotoSummary</div>
+            }
+            @if (instance.BackgroundMode != BackgroundMode.Server)
+            {
+                <div class="row background-timing">
+                    <span class="muted small">Change every</span>
+                    <select class="narrow" value="@instance.BackgroundSeconds" @onchange="SetInterval">
+                        @foreach (var (seconds, label) in Intervals) { <option value="@seconds">@label</option> }
+                    </select>
+                    <label class="check"><input type="checkbox" checked="@instance.BackgroundShuffle" @onchange="e => SetBackground(i => i.BackgroundShuffle = e.Value is true)" /> Shuffle</label>
+                </div>
+            }
+            <div class="edit-actions">
+                <button class="secondary" @onclick="Clone"><Icon Name="copy" Size="15" /> Clone</button>
+                <span class="spacer"></span>
+                <ConfirmButton Class="danger" Disabled="Running" OnConfirm="DeleteAsync" Confirm="Click again to delete it">Delete instance</ConfirmButton>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="primary" @onclick="SaveLook">Save</button>
+    </Footer>
+</Modal>
+
+<Modal Open="Actions.Open == InstanceActions.Dialog.Options" OpenChanged="Close" Title="@($"{_instance?.Name} options")">
+    <ChildContent>
+        @if (_instance is { } instance)
+        {
+            <h3>Updates</h3>
+            @if (instance.Kind == InstanceKind.Official)
+            {
+                <label>Follow a Steam branch</label>
+                <select value="@(instance.TrackBranch ?? "")" @onchange="e => SetBranch(e.Value?.ToString())">
+                    <option value="">Stay on this build</option>
+                    @foreach (var branch in _branches)
+                    {
+                        <option value="@branch.Name">@Updates.Label(branch.Name) · build @branch.BuildId</option>
+                    }
+                    @if (instance.TrackBranch is { } tracked && _branches.All(b => b.Name != tracked)) { <option value="@tracked">@tracked</option> }
+                </select>
+            }
+            else if (instance.TemplateId is { } templateId && State.Library.FindTemplate(templateId) is { } template)
+            {
+                <div class="small">Set up from <b>@template.Name</b>@(instance.TemplateVersion is { Length: > 0 } version ? $" v{version}" : "")</div>
+                <div class="row tight-top">
+                    <button class="secondary small" disabled="@Running" @onclick="() => ReinstallAsync(template)">Reinstall its files</button>
+                </div>
+            }
+            <label class="check"><input type="checkbox" checked="@instance.AutoUpdate" @onchange="e => SetAutoUpdate(e.Value is true)" /> Update by itself</label>
+
+            <h3>Launch</h3>
+            <label>Arguments <span class="muted">(one per line, e.g. --no-vr)</span></label>
+            <textarea class="mono" @bind="_arguments"></textarea>
+            <label class="check"><input type="checkbox" @bind="_shareCache" /> Share the download cache with this server's other instances</label>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="primary" @onclick="SaveOptions">Save</button>
+    </Footer>
+</Modal>
+
+<Modal Open="Actions.Open == InstanceActions.Dialog.Logs" OpenChanged="Close" Title="@($"{_instance?.Name} log")" Wide="true">
+    <ChildContent>
+        @if (_log is null) { <div class="empty">No log yet: it appears after the first launch.</div> }
+        else { <pre class="log">@_log</pre> }
+    </ChildContent>
+    <Footer>
+        <span class="muted small">@(_logFile is null ? "" : Path.GetFileName(_logFile))</span>
+        <span class="spacer"></span>
+        <button class="secondary" @onclick="() => WindowActions.OpenFolder(State.Paths.InstanceData(_instance!.Id))">Open data folder</button>
+        <button class="primary" @onclick="LoadLog">Refresh</button>
+    </Footer>
+</Modal>
+
+@code {
+    private Instance? _instance;
+    private InstanceActions.Dialog _shown;
+    private string _name = "", _accent = "", _artSeed = "", _arguments = "";
+    private bool _shareCache;
+    private string? _log, _logFile;
+    private IReadOnlyList<SteamBranch> _branches = [];
+
+    private bool Running => _instance is not null && State.Runner.Running?.Id == _instance.Id;
+
+    private bool Locked => _instance is not null && Look.IconOf(_instance) is not null;
+
+    protected override void OnInitialized() => Actions.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(async () =>
+    {
+        if (Actions.Open != _shown)
+        {
+            _shown = Actions.Open;
+            if (_shown != InstanceActions.Dialog.None) await LoadAsync();
+        }
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        _instance = Actions.InstanceId is { } id ? State.Library.FindInstance(id) : null;
+        if (_instance is not { } instance) return;
+        _name = instance.Name;
+        _accent = instance.Accent;
+        _artSeed = instance.ArtSeed ?? instance.Id;
+        _arguments = string.Join('\n', instance.Arguments);
+        _shareCache = instance.ShareCache;
+        if (_shown == InstanceActions.Dialog.Edit)
+        {
+            if (Pictures.MigrateOldPicture(instance)) State.Library.SaveInstance(instance);
+            _ = LoadBackgroundsAsync();
+        }
+        if (_shown == InstanceActions.Dialog.Logs) LoadLog();
+        if (_shown == InstanceActions.Dialog.Options)
+        {
+            try { _branches = await State.Branches.GetAsync(); }
+            catch (Exception e) when (e is InvalidOperationException or TimeoutException) { _branches = []; }
+        }
+    }
+
+    private void LoadLog()
+    {
+        var data = State.Paths.InstanceData(_instance!.Id);
+        _logFile = Directory.Exists(data)
+            ? Directory.EnumerateFiles(data, "output_log*.txt").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+            : null;
+        if (_logFile is null) { _log = null; return; }
+        using var stream = new FileStream(_logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        _log = string.Join('\n', reader.ReadToEnd().Split('\n').TakeLast(400));
+    }
+
+    private void Close(bool open)
+    {
+        if (!open) Actions.CloseDialog();
+    }
+
+    private void Save(Action<Instance> change, string? done = null)
+    {
+        var instance = State.Library.FindInstance(_instance!.Id)!;
+        change(instance);
+        State.Library.SaveInstance(instance);
+        _instance = instance;
+        if (done is not null) Messages.Ok(done);
+        State.NotifyChanged();
+    }
+
+    private void SaveLook()
+    {
+        Save(i =>
+        {
+            i.Name = _name.Trim().Length > 0 ? _name.Trim() : i.Name;
+            i.Accent = _accent;
+            i.ArtSeed = _artSeed;
+        }, "Saved.");
+        ShowBackground();
+        Actions.CloseDialog();
+    }
+
+    private void SaveOptions()
+    {
+        Save(i =>
+        {
+            i.Arguments = [.. _arguments.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+            i.ShareCache = _shareCache;
+        }, "Options saved.");
+        Actions.CloseDialog();
+    }
+
+    private void SetBranch(string? branch) => Save(i => i.TrackBranch = branch is { Length: > 0 } ? branch : null,
+        branch is { Length: > 0 } ? $"Follows {Updates.Label(branch)} now." : "Stays on this build now.");
+
+    private void SetAutoUpdate(bool on) => Save(i => i.AutoUpdate = on, on ? "Updates by itself." : "Asks before updating.");
+
+    private Task ReinstallAsync(Template template) =>
+        Messages.TryAsync(() => Task.Run(() => State.Library.ApplyTemplateAsync(_instance!, template)), "Reinstalled its files.");
+
+    private static readonly (BackgroundMode Mode, string Label)[] BackgroundModes =
+        [(BackgroundMode.Server, "Server's"), (BackgroundMode.Pictures, "My pictures"), (BackgroundMode.VRChatPhotos, "VRChat photos")];
+
+    private static readonly (int Seconds, string Label)[] Intervals =
+        [(10, "10 seconds"), (20, "20 seconds"), (30, "30 seconds"), (60, "1 minute"), (300, "5 minutes"), (900, "15 minutes")];
+
+    private List<string> _pictures = [];
+    private readonly Dictionary<string, string?> _thumbs = [];
+    private int? _photoCount;
+
+    private string PhotoSummary => _photoCount switch
+    {
+        null => "Looking for your VRChat photos…",
+        0 => $"No photos in {BackdropPictures.VRChatFolder} yet. Take some in VRChat and they join in.",
+        var n => $"{n:N0} photos from {BackdropPictures.VRChatFolder}, every month. New ones join in as you take them.",
+    };
+
+    private string ThumbStyle(string path) => _thumbs.GetValueOrDefault(path) is { } t ? $"background-image:url(\"{t}\")" : "";
+
+    private void ShowBackground()
+    {
+        if (Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0].StartsWith($"instance/{_instance!.Id}", StringComparison.Ordinal))
+            Background.ShowInstance(_instance, Look.BackgroundCss(_instance, []));
+    }
+
+    private void SetBackground(Action<Instance> change)
+    {
+        Save(change);
+        ShowBackground();
+    }
+
+    private void SetBackgroundMode(BackgroundMode mode)
+    {
+        if (mode == _instance!.BackgroundMode) return;
+        SetBackground(i => i.BackgroundMode = mode);
+        _ = LoadBackgroundsAsync();
+    }
+
+    private void SetInterval(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value as string, out var seconds)) SetBackground(i => i.BackgroundSeconds = seconds);
+    }
+
+    private async Task LoadBackgroundsAsync()
+    {
+        if (_instance is not { } instance) return;
+        switch (instance.BackgroundMode)
+        {
+            case BackgroundMode.Pictures:
+                _pictures = Pictures.Own(instance);
+                StateHasChanged();
+                foreach (var path in _pictures.Where(p => !_thumbs.ContainsKey(p)).ToList())
+                {
+                    _thumbs[path] = await Pictures.ThumbnailAsync(path);
+                    StateHasChanged();
+                }
+                break;
+            case BackgroundMode.VRChatPhotos:
+                _photoCount = null;
+                StateHasChanged();
+                _photoCount = (await Task.Run(Pictures.VRChatPhotos)).Count;
+                StateHasChanged();
+                break;
+        }
+    }
+
+    private void RefreshBackground()
+    {
+        Background.Forget(_instance!);
+        ShowBackground();
+    }
+
+    private async Task AddPicturesAsync()
+    {
+        var picked = await WindowActions.PickImagesAsync($"Pictures for {_instance!.Name}'s background");
+        if (picked.Length == 0) return;
+        if (!await Messages.Try(() => Pictures.Add(_instance!, picked), picked.Length == 1 ? "Picture added." : $"{picked.Length} pictures added.")) return;
+        RefreshBackground();
+        await LoadBackgroundsAsync();
+    }
+
+    private async Task RemovePictureAsync(string path)
+    {
+        if (!await Messages.Try(() => Pictures.Remove(_instance!, path))) return;
+        _pictures.Remove(path);
+        _thumbs.Remove(path);
+        RefreshBackground();
+    }
+
+    private void Clone()
+    {
+        var name = $"{_instance!.Name} (copy)";
+        Instance? copy = null;
+        if (!Messages.Try(() => copy = State.Library.DuplicateInstance(_instance.Id, name), $"{name} created.").Result) return;
+        Actions.CloseDialog();
+        State.NotifyChanged();
+        Navigation.NavigateTo($"/instance/{copy!.Id}");
+    }
+
+    private async Task DeleteAsync()
+    {
+        var name = _instance!.Name;
+        if (!await Messages.Try(() => State.Library.DeleteInstance(_instance.Id, State.Isolation), $"{name} deleted.")) return;
+        Actions.CloseDialog();
+        State.NotifyChanged();
+        Navigation.NavigateTo("/library");
+    }
+
+    public void Dispose() => Actions.Changed -= OnChanged;
+}
