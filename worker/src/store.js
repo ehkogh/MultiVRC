@@ -3,22 +3,10 @@ const REQUESTS = "requests";
 const ACTIVITY = "activity";
 const MAX_ACTIVITY = 200;
 
-export const DEFAULT_SERVERS = [
-  {
-    id: "larpchat",
-    name: "LarpChat",
-    templateUrl: "https://assets.larpchat.ehko.dev/multivrc.json",
-    verifiedBy: ["ehko"],
-    note: "VRChat 2026.4 with BepInEx and the PrivateServer plugin, on its own accounts, worlds and avatars. Every download is pinned by checksum.",
-    addedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  },
-];
-
 export const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 12);
 
 export async function servers(env) {
-  return (await env.DATA.get(SERVERS, "json")) ?? DEFAULT_SERVERS;
+  return (await env.DATA.get(SERVERS, "json")) ?? [];
 }
 
 export async function saveServers(env, list) {

@@ -92,8 +92,7 @@ The corner of a server's page says how far it can be trusted (icon only; hover f
 Verification is kept with this project, never with a server: a template cannot vouch for itself.
 The list is served by the project's site at
 [`multivrc.ehko.dev/api/verified-servers`](https://multivrc.ehko.dev/api/verified-servers), and a
-server is verified only if its template was installed from exactly a listed URL. Templates shipped
-inside the launcher count as verified.
+server is verified only if its template was installed from exactly a listed URL.
 
 **Run a server?** Apply on the [website](https://multivrc.ehko.dev/#apply). Pin your downloads with
 `sha256` first.

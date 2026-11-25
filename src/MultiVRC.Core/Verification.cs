@@ -53,7 +53,7 @@ public sealed class Verification(LauncherPaths paths, HttpClient http, string li
     private Trust Community(Template? template)
     {
         var entry = template?.SourceUrl is { } url ? _servers.FirstOrDefault(s => Same(s.TemplateUrl, url)) : null;
-        return entry is not null || template?.Bundled == true
+        return entry is not null
             ? new Trust(TrustLevel.Verified, entry)
             : new Trust(TrustLevel.Unverified, null);
     }

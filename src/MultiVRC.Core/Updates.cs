@@ -20,7 +20,7 @@ public sealed class Updates(Library library, IBranchSource branches)
     public async Task<List<PendingUpdate>> CheckAsync(CancellationToken ct = default)
     {
         Problems.Clear();
-        foreach (var template in library.Templates().Where(t => t.SourceUrl is not null && !t.Bundled))
+        foreach (var template in library.Templates().Where(t => t.SourceUrl is not null))
         {
             try { await library.InstallTemplateAsync(template.SourceUrl!, ct); }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException)
