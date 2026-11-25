@@ -101,8 +101,6 @@ public static class BuiltInTemplates
 {
     public static void Install(Library library)
     {
-        foreach (var template in BundledTemplates.All()) library.SaveTemplate(template);
-
         library.SaveTemplate(new Template
         {
             Id = "vrchat-official", Name = "VRChat", Server = "VRChat", Kind = InstanceKind.Official,

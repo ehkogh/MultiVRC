@@ -110,8 +110,6 @@ public sealed class Template
     public Branding Branding { get; set; } = new();
 
     public string? SourceUrl { get; set; }
-
-    public bool Bundled { get; set; }
 }
 
 public sealed class TemplatePlayMode
