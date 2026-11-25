@@ -277,6 +277,11 @@ request form.
 - Running several modded instances at once. This needs per-process isolation; official instances
   will stay one at a time.
 
+## How it's made
+
+MultiVRC is human-crafted: its design, decisions and review are done by people. AI-assisted tooling
+was used along the way to help write and check parts of the code and docs.
+
 ## Licence
 
 [MIT](LICENSE). Icons are from [Lucide](https://lucide.dev) (ISC) and brand marks from
