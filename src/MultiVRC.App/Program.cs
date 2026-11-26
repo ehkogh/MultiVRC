@@ -27,6 +27,10 @@ public static class Program
         if (!options.Demo && OperatingSystem.IsWindows()) _ = Task.Run(LinkRegistration.Ensure);
 #endif
 
+        // WebView2 paints white until the page's first frame; make that the app's own background instead.
+        if (Environment.GetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR") is null)
+            Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FF0B0D12");
+
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(inbox);
