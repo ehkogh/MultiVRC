@@ -45,10 +45,10 @@ public sealed class Verification(LauncherPaths paths, HttpClient http, string li
     }
 
     public Trust Of(Instance instance, Template? template) =>
-        instance.Kind == InstanceKind.Official ? new Trust(TrustLevel.Official, null) : Community(template);
+        instance.Kind == InstanceKind.Official && (template is null || Library.IsOfficial(template)) ? new Trust(TrustLevel.Official, null) : Community(template);
 
     public Trust Of(Template template) =>
-        template.Kind == InstanceKind.Official ? new Trust(TrustLevel.Official, null) : Community(template);
+        Library.IsOfficial(template) ? new Trust(TrustLevel.Official, null) : Community(template);
 
     private Trust Community(Template? template)
     {
