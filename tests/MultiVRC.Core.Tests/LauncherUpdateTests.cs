@@ -16,7 +16,7 @@ public sealed class LauncherUpdateTests : IDisposable
         _paths = new LauncherPaths(Path.Combine(_root, "data"));
         _paths.EnsureCreated();
         Directory.CreateDirectory(App);
-        File.WriteAllText(Path.Combine(App, "MultiVRC.exe"), "0.1.0 exe");
+        File.WriteAllText(Path.Combine(App, GitHubReleases.ExeName), "0.1.0 exe");
         File.WriteAllText(Path.Combine(App, "MultiVRC.Core.dll"), "0.1.0 core");
         File.WriteAllText(Path.Combine(App, "keep.txt"), "not in the update");
     }
@@ -45,7 +45,7 @@ public sealed class LauncherUpdateTests : IDisposable
                "assets":[{"name":"MultiVRC-win-x64.zip","browser_download_url":"https://x/2.zip"},{"name":"MultiVRC-win-x64.zip.sha256","browser_download_url":"https://x/2.sha"}]}
             ]
             """;
-        var release = Assert.Single(GitHubReleases.Parse(json));
+        var release = Assert.Single(GitHubReleases.Parse(json.Replace("MultiVRC-win-x64.zip", GitHubReleases.Asset)));
         Assert.Equal("0.2.0", release.Version);
         Assert.True(release.Prerelease);
         Assert.Equal("https://x/2.sha", release.Sha256Url);
@@ -71,12 +71,12 @@ public sealed class LauncherUpdateTests : IDisposable
         Assert.Equal("0.2.0", updater.ReadyVersion);
 
         var exe = updater.Install();
-        Assert.Equal(Path.Combine(App, "MultiVRC.exe"), exe);
-        Assert.Equal("0.2.0 exe", File.ReadAllText(Path.Combine(App, "MultiVRC.exe")));
+        Assert.Equal(Path.Combine(App, GitHubReleases.ExeName), exe);
+        Assert.Equal("0.2.0 exe", File.ReadAllText(Path.Combine(App, GitHubReleases.ExeName)));
         Assert.Equal("0.2.0 core", File.ReadAllText(Path.Combine(App, "MultiVRC.Core.dll")));
         Assert.Equal("new", File.ReadAllText(Path.Combine(App, "wwwroot", "added.css")));
         Assert.Equal("not in the update", File.ReadAllText(Path.Combine(App, "keep.txt")));
-        Assert.True(File.Exists(Path.Combine(App, "MultiVRC.exe.old")));
+        Assert.True(File.Exists(Path.Combine(App, GitHubReleases.ExeName + ".old")));
         Assert.Null(updater.ReadyVersion);
 
         LauncherUpdater.RemoveLeftovers(App);
@@ -93,7 +93,8 @@ public sealed class LauncherUpdateTests : IDisposable
         Assert.Null(updater.ReadyVersion);
     }
 
-    [Fact]
+    // Linux doesn't stop a file in use from being moved, which is what this uses to make the install fail.
+    [WindowsFact]
     public async Task An_install_that_fails_half_way_puts_the_old_files_back()
     {
         var zip = MakeZip("0.2.0", out var sha);
@@ -101,10 +102,10 @@ public sealed class LauncherUpdateTests : IDisposable
         var updater = Updater("0.1.0", release);
         await updater.DownloadAsync(release);
 
-        using (File.Open(Path.Combine(App, "MultiVRC.exe"), FileMode.Open, FileAccess.Read, FileShare.None))
+        using (File.Open(Path.Combine(App, GitHubReleases.ExeName), FileMode.Open, FileAccess.Read, FileShare.None))
             Assert.ThrowsAny<IOException>(() => updater.Install());
 
-        Assert.Equal("0.1.0 exe", File.ReadAllText(Path.Combine(App, "MultiVRC.exe")));
+        Assert.Equal("0.1.0 exe", File.ReadAllText(Path.Combine(App, GitHubReleases.ExeName)));
         Assert.Equal("0.1.0 core", File.ReadAllText(Path.Combine(App, "MultiVRC.Core.dll")));
         Assert.Equal("0.2.0", updater.ReadyVersion);
     }
@@ -119,7 +120,7 @@ public sealed class LauncherUpdateTests : IDisposable
     {
         var source = Path.Combine(_root, "release", "MultiVRC");
         Directory.CreateDirectory(Path.Combine(source, "wwwroot"));
-        File.WriteAllText(Path.Combine(source, "MultiVRC.exe"), $"{version} exe");
+        File.WriteAllText(Path.Combine(source, GitHubReleases.ExeName), $"{version} exe");
         File.WriteAllText(Path.Combine(source, "MultiVRC.Core.dll"), $"{version} core");
         File.WriteAllText(Path.Combine(source, "wwwroot", "added.css"), "new");
         var zip = Path.Combine(_root, $"MultiVRC-{version}.zip");

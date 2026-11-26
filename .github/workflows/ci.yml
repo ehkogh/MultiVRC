@@ -54,6 +54,45 @@ jobs:
           path: publish
           retention-days: 14
 
+  launcher-linux:
+    name: Launcher (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore MultiVRC.slnx
+
+      - name: Build
+        run: dotnet build MultiVRC.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test MultiVRC.slnx -c Release --no-build --logger "trx;LogFileName=results.trx" --results-directory test-results
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-linux
+          path: test-results
+
+      - name: Publish
+        run: |
+          base=$(grep -oPm1 '(?<=<Version>)[^<]+' src/MultiVRC.App/MultiVRC.App.csproj)
+          dotnet publish src/MultiVRC.App -c Release -r linux-x64 --self-contained true "-p:Version=$base-ci.${{ github.run_number }}" -o publish --nologo
+          find publish -name '*.pdb' -delete
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7
+        with:
+          name: MultiVRC-linux-x64-ci.${{ github.run_number }}
+          path: publish
+          retention-days: 14
+
   site:
     name: Site
     runs-on: ubuntu-latest

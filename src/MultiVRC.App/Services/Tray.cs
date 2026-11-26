@@ -1,4 +1,6 @@
+#if WINDOWS
 using Forms = System.Windows.Forms;
+#endif
 
 namespace MultiVRC.App.Services;
 
@@ -13,9 +15,12 @@ public enum NotifyKind
     Test,
 }
 
+#if WINDOWS
 /// <summary>MultiVRC's icon by the clock: it keeps the launcher reachable while the window is closed, and shows its notifications.</summary>
 public sealed class Tray : IDisposable
 {
+    public static bool Supported => true;
+
     private readonly LauncherState _state;
     private readonly ManualResetEventSlim _ready = new();
     private Forms.Control? _ui;
@@ -119,3 +124,27 @@ public sealed class Tray : IDisposable
         catch (InvalidOperationException) { }
     }
 }
+#else
+/// <summary>
+/// No tray icon off Windows yet: the window closes normally and nothing is notified. Same shape as the Windows one so
+/// callers needn't care.
+/// </summary>
+public sealed class Tray(LauncherState state) : IDisposable
+{
+    public static bool Supported => false;
+
+#pragma warning disable CS0067 // Never raised without a tray icon.
+    public event Action<string?>? OpenRequested;
+
+    public event Action? CheckRequested;
+#pragma warning restore CS0067
+
+    public LauncherState State => state;
+
+    public void Notify(NotifyKind kind, string title, string text, string? target = null) { }
+
+    public void SetStatus(string? status) { }
+
+    public void Dispose() { }
+}
+#endif

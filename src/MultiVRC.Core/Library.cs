@@ -166,6 +166,8 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
 
     internal static string InsideGame(string game, string relative)
     {
+        // Templates are written for Windows: "BepInEx\config" means a folder on Linux too.
+        if (!OperatingSystem.IsWindows()) relative = relative.Replace('\\', '/');
         var root = Path.GetFullPath(game) + Path.DirectorySeparatorChar;
         var full = Path.GetFullPath(Path.Combine(game, relative));
         if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && full + Path.DirectorySeparatorChar != root)
@@ -173,7 +175,7 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
         return full;
     }
 
-    public void DeleteInstance(string id, Isolation isolation)
+    public void DeleteInstance(string id, IIsolation isolation)
     {
         if (isolation.Current?.InstanceId == id) throw new InvalidOperationException("That instance is running.");
         FileLinks.DeleteTree(paths.InstanceDir(id));

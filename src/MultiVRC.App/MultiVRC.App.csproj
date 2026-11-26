@@ -2,7 +2,11 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Windows builds target net10.0-windows for the WinForms tray icon; Linux builds are plain net10.0. -->
+    <IsWindowsBuild Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier.StartsWith('win'))</IsWindowsBuild>
+    <IsWindowsBuild Condition="'$(RuntimeIdentifier)' == ''">$([MSBuild]::IsOSPlatform('Windows'))</IsWindowsBuild>
+    <TargetFramework Condition="'$(IsWindowsBuild)' == 'true'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(IsWindowsBuild)' != 'true'">net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>MultiVRC</AssemblyName>
@@ -11,7 +15,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon\MultiVRC.ico</ApplicationIcon>
     <!-- Only for the tray icon and its notifications. -->
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWindowsForms Condition="'$(IsWindowsBuild)' == 'true'">true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,7 +26,8 @@
   <ItemGroup>
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />
     <PackageReference Include="QRCoder" Version="1.9.0" />
-    <PackageReference Include="System.Drawing.Common" Version="8.0.34" />
+    <!-- WinForms brings its own on Windows. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.34" Condition="'$(IsWindowsBuild)' != 'true'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,6 +37,7 @@
   <ItemGroup>
     <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
     <None Include="icon\MultiVRC.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="icon\MultiVRC-256.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

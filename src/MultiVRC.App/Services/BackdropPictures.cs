@@ -73,9 +73,9 @@ public sealed class BackdropPictures(LauncherState state)
         return true;
     }
 
-    public Task<string?> CssAsync(string path) => Task.Run(() => (Scaled(path, 1920) ?? Raw(path)) is { } uri ? $"url(\"{uri}\") center / cover no-repeat" : null);
+    public Task<string?> CssAsync(string path) => Task.Run(() => (ScaledIfSupported(path, 1920) ?? Raw(path)) is { } uri ? $"url(\"{uri}\") center / cover no-repeat" : null);
 
-    public Task<string?> ThumbnailAsync(string path) => Task.Run(() => Scaled(path, 320) ?? Raw(path));
+    public Task<string?> ThumbnailAsync(string path) => Task.Run(() => ScaledIfSupported(path, 320) ?? Raw(path));
 
     private static string? Raw(string path)
     {
@@ -89,6 +89,10 @@ public sealed class BackdropPictures(LauncherState state)
         catch (Exception) { return null; }
     }
 
+    // System.Drawing is Windows only; elsewhere the picture is shown as it is.
+    private string? ScaledIfSupported(string path, int width) => OperatingSystem.IsWindowsVersionAtLeast(6, 1) ? Scaled(path, width) : null;
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows6.1")]
     private string? Scaled(string path, int width)
     {
         try

@@ -59,7 +59,7 @@ public sealed class SingleInstance : IDisposable
     private static void HandOff(string pipe, string? link)
     {
         // This process was started by the user (or their browser), so it may pass the foreground on.
-        AllowSetForegroundWindow(AsfwAny);
+        if (OperatingSystem.IsWindows()) AllowSetForegroundWindow(AsfwAny);
         try
         {
             using var client = new NamedPipeClientStream(".", pipe, PipeDirection.Out);
@@ -103,7 +103,8 @@ public sealed class SingleInstance : IDisposable
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(int processId);
 }
 
-/// <summary>Points multivrc:// at this copy of MultiVRC for the current user.</summary>
+/// <summary>Windows: points multivrc:// at this copy of MultiVRC for the current user. Linux does it in <see cref="DesktopEntry"/>.</summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public static class LinkRegistration
 {
     private const string Key = @"Software\Classes\" + AppLinks.Scheme;

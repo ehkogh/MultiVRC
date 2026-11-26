@@ -24,7 +24,7 @@ public static class Program
             inbox.Add(text);
         });
 #if !DEBUG
-        if (!options.Demo) _ = Task.Run(LinkRegistration.Ensure);
+        if (!options.Demo && OperatingSystem.IsWindows()) _ = Task.Run(LinkRegistration.Ensure);
 #endif
 
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
@@ -45,13 +45,14 @@ public static class Program
         var app = builder.Build();
         app.MainWindow
             .SetTitle("MultiVRC")
-            .SetChromeless(true)
+            .SetChromeless(WindowActions.OwnTitleBar)
             .SetSize(1360, 800)
             .SetResizable(false)
             .Center();
-        var icon = Path.Combine(AppContext.BaseDirectory, "icon", "MultiVRC.ico");
+        var icon = Path.Combine(AppContext.BaseDirectory, "icon", OperatingSystem.IsWindows() ? "MultiVRC.ico" : "MultiVRC-256.png");
         if (File.Exists(icon)) app.MainWindow.SetIconFile(icon);
         app.MainWindow.WindowCreated += (_, _) => WindowActions.RoundCorners();
+        if (OperatingSystem.IsLinux()) _ = Task.Run(() => DesktopEntry.Ensure(options));
 
         var devTools = Environment.GetEnvironmentVariable("MULTIVRC_DEVTOOLS_PORT") is { Length: > 0 } port && int.TryParse(port, out _);
         if (devTools) app.MainWindow.SetBrowserControlInitParameters($"--remote-debugging-port={Environment.GetEnvironmentVariable("MULTIVRC_DEVTOOLS_PORT")}");
@@ -68,7 +69,8 @@ public static class Program
         state.Changed += () => tray.SetStatus(state.Runner.Running is { } playing ? $"Playing {playing.Name}" : null);
         app.MainWindow.RegisterWindowClosingHandler((_, _) =>
         {
-            if (WindowActions.Quitting || !state.Settings.CloseToBackground) return false;
+            // Without a tray icon there'd be no way back to a hidden window.
+            if (WindowActions.Quitting || !Tray.Supported || !state.Settings.CloseToBackground) return false;
             WindowActions.Hide();
             if (!state.Settings.ToldAboutBackground)
             {

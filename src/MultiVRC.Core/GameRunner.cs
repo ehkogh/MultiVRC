@@ -11,7 +11,7 @@ public enum LaunchMode
     WithoutAntiCheat,
 }
 
-public sealed class GameRunner(Library library, Isolation isolation, bool simulate = false) : IDisposable
+public sealed class GameRunner(Library library, IIsolation isolation, bool simulate = false, IGameStarter? starter = null) : IDisposable
 {
     private static readonly TimeSpan SimulatedSession = TimeSpan.FromSeconds(20);
 
@@ -20,13 +20,16 @@ public sealed class GameRunner(Library library, Isolation isolation, bool simula
     private Timer? _watch;
     private DateTimeOffset _startedAt;
     private string? _extraProcessName;
+    private Process? _launched;
+    private readonly IGameStarter _starter = starter ?? new WindowsStarter();
 
     public Instance? Running { get; private set; }
 
     public event Action? Changed;
 
-    public bool AnyGameRunning() => !simulate &&
-        GameProcessNames.Append(_extraProcessName).OfType<string>().Any(name => Process.GetProcessesByName(name).Length > 0);
+    private IEnumerable<string> Names => GameProcessNames.Append(_extraProcessName).OfType<string>();
+
+    public bool AnyGameRunning() => !simulate && (_launched is { HasExited: false } || GameProcesses.Find(Names).Any());
 
     public string? RecoverAfterCrash()
     {
@@ -78,13 +81,7 @@ public sealed class GameRunner(Library library, Isolation isolation, bool simula
         isolation.Apply(instance);
         try
         {
-            var start = new ProcessStartInfo("cmd.exe") { WorkingDirectory = game, UseShellExecute = false, CreateNoWindow = true };
-            var command = new System.Text.StringBuilder($"/d /c cd /d \"{game}\" && start \"\" /D \"{game}\" \"{exe}\"");
-            foreach (var argument in arguments) command.Append(" \"").Append(argument.Replace("\"", "\\\"")).Append('"');
-            start.Arguments = command.ToString();
-            start.Environment["SteamAppId"] = "438100";
-            start.Environment["SteamGameId"] = "438100";
-            Process.Start(start);
+            _launched = _starter.Start(instance, game, exe, arguments, antiCheat: exe == "start_protected_game.exe");
         }
         catch
         {
@@ -112,6 +109,8 @@ public sealed class GameRunner(Library library, Isolation isolation, bool simula
         if (Running is not { } instance) return;
         _watch?.Dispose();
         _watch = null;
+        _launched?.Dispose();
+        _launched = null;
         try
         {
             if (!simulate) isolation.Restore();
@@ -132,11 +131,7 @@ public sealed class GameRunner(Library library, Isolation isolation, bool simula
     public void Stop()
     {
         if (simulate) { End(); return; }
-        foreach (var name in GameProcessNames.Append(_extraProcessName).OfType<string>())
-            foreach (var process in Process.GetProcessesByName(name))
-            {
-                try { process.CloseMainWindow(); } catch (InvalidOperationException) { }
-            }
+        foreach (var pid in GameProcesses.Find(Names).ToList()) GameProcesses.Close(pid);
     }
 
     public void Dispose() => _watch?.Dispose();

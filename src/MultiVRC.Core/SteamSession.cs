@@ -193,7 +193,18 @@ public sealed class SteamSession : ISteamAccount, IDisposable
     {
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new SavedLogin(account, token)));
         Directory.CreateDirectory(_paths.Root);
-        File.WriteAllBytes(TokenFile, ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser));
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllBytes(TokenFile, ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser));
+            return;
+        }
+        // No DPAPI here: the file is readable by this user only, like ~/.ssh keys.
+        using var file = new FileStream(TokenFile, new FileStreamOptions
+        {
+            Mode = FileMode.Create, Access = FileAccess.Write, UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        });
+        File.SetUnixFileMode(TokenFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        file.Write(bytes);
     }
 
     private SavedLogin? ReadToken()
@@ -201,7 +212,9 @@ public sealed class SteamSession : ISteamAccount, IDisposable
         try
         {
             if (!File.Exists(TokenFile)) return null;
-            var bytes = ProtectedData.Unprotect(File.ReadAllBytes(TokenFile), null, DataProtectionScope.CurrentUser);
+            var bytes = OperatingSystem.IsWindows()
+                ? ProtectedData.Unprotect(File.ReadAllBytes(TokenFile), null, DataProtectionScope.CurrentUser)
+                : File.ReadAllBytes(TokenFile);
             return JsonSerializer.Deserialize<SavedLogin>(bytes);
         }
         catch (Exception e) when (e is CryptographicException or JsonException or IOException)
