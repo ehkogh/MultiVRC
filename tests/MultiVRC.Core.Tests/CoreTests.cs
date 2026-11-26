@@ -21,7 +21,9 @@ public sealed class CoreTests : IDisposable
     private string GameKey => _registryRoot + @"\Game";
     private string LauncherKey => _registryRoot + @"\Launcher";
     private string DataFolder => Path.Combine(_root, "LocalLow", "VRChat", "VRChat");
-    private Isolation NewIsolation() => new(_paths, DataFolder, GameKey, LauncherKey);
+    private IIsolation NewIsolation() => OperatingSystem.IsWindows()
+        ? new Isolation(_paths, DataFolder, GameKey, LauncherKey)
+        : new PrefixIsolation(_paths, Path.Combine(_root, "Pictures"));
 
     private string FakeGame()
     {
@@ -48,7 +50,7 @@ public sealed class CoreTests : IDisposable
         Assert.True(FileLinks.LinkCount(Path.Combine(game, "VRChat.exe")) > 1, "the exe should be a hardlink of the build's");
         Assert.Equal("patched", File.ReadAllText(Path.Combine(game, "VRChat_Data", "level0")));
         Assert.Equal("original", File.ReadAllText(Path.Combine(_paths.BuildFiles(build.Id), "VRChat_Data", "level0")));
-        Assert.Equal([@"BepInEx\config\x.cfg", @"VRChat_Data\level0"], _library.AddedFiles(instance));
+        Assert.Equal([Path.Combine("BepInEx", "config", "x.cfg"), Path.Combine("VRChat_Data", "level0")], _library.AddedFiles(instance));
 
         _library.DeleteInstance(instance.Id, NewIsolation());
         Assert.True(File.Exists(Path.Combine(_paths.BuildFiles(build.Id), "VRChat.exe")));
@@ -67,7 +69,7 @@ public sealed class CoreTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_paths.Instances, "escaped.txt")));
     }
 
-    [Fact]
+    [WindowsFact]
     public async Task A_session_swaps_the_data_and_settings_in_and_puts_the_originals_back()
     {
         Directory.CreateDirectory(DataFolder);
@@ -97,7 +99,7 @@ public sealed class CoreTests : IDisposable
         isolation.Restore();
     }
 
-    [Fact]
+    [WindowsFact]
     public async Task Unity_settings_survive_a_session_byte_for_byte()
     {
         var volume = BitConverter.GetBytes(0.75);
@@ -147,7 +149,7 @@ public sealed class CoreTests : IDisposable
     [System.Runtime.InteropServices.DllImport("advapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private static extern int RegSetValueExW(Microsoft.Win32.SafeHandles.SafeRegistryHandle key, string name, int reserved, uint type, byte[] data, uint size);
 
-    [Fact]
+    [WindowsFact]
     public async Task A_session_left_swapped_by_a_crash_is_recovered_only_once_the_game_is_gone()
     {
         Directory.CreateDirectory(DataFolder);
@@ -165,7 +167,7 @@ public sealed class CoreTests : IDisposable
         Assert.Null(afterCrash.Current);
     }
 
-    [Fact]
+    [WindowsFact]
     public async Task Only_one_servers_instances_share_a_download_cache()
     {
         var build = _library.ImportFolder(FakeGame(), "Test build", "2026.4");
@@ -219,7 +221,8 @@ public sealed class CoreTests : IDisposable
 
     public void Dispose()
     {
-        try { Registry.CurrentUser.DeleteSubKeyTree(_registryRoot, throwOnMissingSubKey: false); } catch (UnauthorizedAccessException) { }
+        if (OperatingSystem.IsWindows())
+            try { Registry.CurrentUser.DeleteSubKeyTree(_registryRoot, throwOnMissingSubKey: false); } catch (UnauthorizedAccessException) { }
         if (FileLinks.IsJunction(DataFolder)) FileLinks.RemoveJunction(DataFolder);
         FileLinks.DeleteTree(_root);
     }

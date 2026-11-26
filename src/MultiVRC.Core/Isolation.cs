@@ -1,8 +1,40 @@
+using System.Runtime.Versioning;
 using Microsoft.Win32;
 
 namespace MultiVRC.Core;
 
-public sealed class Isolation(LauncherPaths paths, string? dataFolder = null, string? gameKey = null, string? launcherKey = null)
+/// <summary>What a Windows session swapped in, saved as it goes so a crash can be undone.</summary>
+public sealed class SwapState
+{
+    public required string InstanceId { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
+    public bool FolderMoved { get; set; }
+    public bool JunctionMade { get; set; }
+    public bool RegistryMoved { get; set; }
+    public bool RegistryLoaded { get; set; }
+}
+
+/// <summary>Keeps each instance's VRChat data and settings apart while it runs.</summary>
+public interface IIsolation
+{
+    SwapState? Current { get; }
+
+    void Apply(Instance instance);
+
+    void Restore();
+
+    /// <summary>Puts things back after a session the launcher didn't see end; the instance's id, or null.</summary>
+    string? Recover(Func<bool> gameRunning);
+
+    void ForgetInstance(string instanceId);
+}
+
+/// <summary>
+/// Windows: VRChat keeps its data in LocalLow and its settings in HKCU, shared by every copy of the game, so a session swaps
+/// the instance's in (a junction and a registry copy) and puts the player's own back when it ends.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class Isolation(LauncherPaths paths, string? dataFolder = null, string? gameKey = null, string? launcherKey = null) : IIsolation
 {
     private const string OriginalSuffix = ".multivrc-original";
     public const string DefaultLauncherKey = @"Software\MultiVRC";
@@ -10,16 +42,6 @@ public sealed class Isolation(LauncherPaths paths, string? dataFolder = null, st
     private readonly string _gameKey = gameKey ?? LauncherPaths.GameRegistryKey;
     private string OriginalRegistry => $@"{_launcherKey}\Original";
     private string InstanceRegistry(string instanceId) => $@"{_launcherKey}\Instances\{instanceId}";
-
-    public sealed class SwapState
-    {
-        public required string InstanceId { get; set; }
-        public DateTimeOffset StartedAt { get; set; }
-        public bool FolderMoved { get; set; }
-        public bool JunctionMade { get; set; }
-        public bool RegistryMoved { get; set; }
-        public bool RegistryLoaded { get; set; }
-    }
 
     public SwapState? Current => JsonFiles.Read<SwapState>(paths.SwapFile);
 
@@ -37,7 +59,7 @@ public sealed class Isolation(LauncherPaths paths, string? dataFolder = null, st
         {
             var data = paths.InstanceData(instance.Id);
             Directory.CreateDirectory(data);
-            PrepareCache(instance, data);
+            DataFolders.PrepareCache(paths, instance, data);
 
             if (FileLinks.IsJunction(DataFolder)) FileLinks.RemoveJunction(DataFolder);
             if (Directory.Exists(DataFolder))
@@ -134,27 +156,6 @@ public sealed class Isolation(LauncherPaths paths, string? dataFolder = null, st
 
     public void ForgetInstance(string instanceId) =>
         Registry.CurrentUser.DeleteSubKeyTree(InstanceRegistry(instanceId), throwOnMissingSubKey: false);
-
-    private void PrepareCache(Instance instance, string data)
-    {
-        var cache = Path.Combine(data, "Cache-WindowsPlayer");
-        if (instance.ShareCache)
-        {
-            var shared = Path.GetFullPath(paths.SharedCacheFor(instance));
-            if (FileLinks.IsJunction(cache))
-            {
-                if (string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(new DirectoryInfo(cache).LinkTarget!)), Path.TrimEndingDirectorySeparator(shared), StringComparison.OrdinalIgnoreCase)) return;
-                FileLinks.RemoveJunction(cache);
-            }
-            if (Directory.Exists(cache)) FileLinks.DeleteTree(cache);
-            Directory.CreateDirectory(shared);
-            FileLinks.CreateJunction(cache, shared);
-        }
-        else if (FileLinks.IsJunction(cache))
-        {
-            FileLinks.RemoveJunction(cache);
-        }
-    }
 
     private void Save(SwapState state) => JsonFiles.Write(paths.SwapFile, state);
 

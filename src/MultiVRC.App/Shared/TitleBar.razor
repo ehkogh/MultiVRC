@@ -1,6 +1,8 @@
 <div class="titlebar" @onmousedown="Drag">
     <span class="titlebar-title">@Title</span>
     @if (Demo) { <span class="demo-pill" title="Made-up data: Play only pretends, and nothing of your real VRChat is touched. Start with --real for your own library.">DEMO</span> }
+    @if (WindowActions.OwnTitleBar)
+    {
     <div class="window-buttons" @onmousedown:stopPropagation="true">
         <button class="win" title="Minimise" @onclick="WindowActions.Minimize">
             <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1" /></svg>
@@ -9,6 +11,7 @@
             <svg viewBox="0 0 10 10" width="10" height="10" stroke="currentColor" stroke-width="1.1"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" /></svg>
         </button>
     </div>
+    }
 </div>
 
 @code {

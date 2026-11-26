@@ -12,8 +12,37 @@ permissions:
   contents: write
 
 jobs:
+  linux:
+    name: Build for Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test tests/MultiVRC.Core.Tests -c Release
+
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dotnet publish src/MultiVRC.App -c Release -r linux-x64 --self-contained true "-p:Version=$version" -o publish --nologo
+          find publish -name '*.pdb' -delete
+          chmod +x publish/MultiVRC
+          # zip keeps the executable bit, which the launcher's self-update relies on.
+          (cd publish && zip -qr ../MultiVRC-linux-x64.zip .)
+          printf '%s  MultiVRC-linux-x64.zip' "$(sha256sum MultiVRC-linux-x64.zip | cut -d' ' -f1)" > MultiVRC-linux-x64.zip.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: MultiVRC-linux-x64.zip*
+
   release:
     name: Build and publish
+    needs: linux
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -51,6 +80,10 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" "/DNumericVersion=$($version.Split('-')[0])" "/DPublishDir=$PWD\publish" installer\MultiVRC.iss
           if ($LASTEXITCODE) { throw 'Inno Setup failed' }
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: linux
+
       - name: Publish
         shell: pwsh
         env:
@@ -58,4 +91,4 @@ jobs:
         run: |
           $extra = @()
           if ("${{ steps.version.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
-          gh release create "${{ github.ref_name }}" MultiVRC-win-x64.zip MultiVRC-win-x64.zip.sha256 (Get-ChildItem installer/out/MultiVRC-Setup-*.exe).FullName --title "MultiVRC ${{ github.ref_name }}" --generate-notes @extra
+          gh release create "${{ github.ref_name }}" MultiVRC-win-x64.zip MultiVRC-win-x64.zip.sha256 MultiVRC-linux-x64.zip MultiVRC-linux-x64.zip.sha256 (Get-ChildItem installer/out/MultiVRC-Setup-*.exe).FullName --title "MultiVRC ${{ github.ref_name }}" --generate-notes @extra

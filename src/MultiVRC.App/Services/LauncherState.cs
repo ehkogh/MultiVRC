@@ -12,6 +12,9 @@ public sealed class Settings
 
     public bool LauncherPrereleases { get; set; }
 
+    /// <summary>Linux: the Proton folder to start games with; null for the newest of Valve's.</summary>
+    public string? ProtonFolder { get; set; }
+
     public bool CloseToBackground { get; set; } = true;
 
     public bool ToldAboutBackground { get; set; }
@@ -38,7 +41,12 @@ public sealed class LauncherState : IDisposable
 {
     public LauncherPaths Paths { get; }
     public Library Library { get; }
-    public Isolation Isolation { get; }
+    public IIsolation Isolation { get; }
+
+    /// <summary>Linux: Steam, its Protons and the anti-cheat runtime, as last looked up.</summary>
+    public SteamSetup SteamSetup { get; private set; } = SteamSetup.None;
+
+    public SteamSetup RefreshSteamSetup() => SteamSetup = OperatingSystem.IsLinux() ? Proton.Find() : SteamSetup.None;
     public GameRunner Runner { get; }
     public ISteamAccount Steam { get; }
     public NewsReader News { get; }
@@ -85,21 +93,32 @@ public sealed class LauncherState : IDisposable
         Paths.EnsureCreated();
         Library = new Library(Paths, http);
         if (Demo) DemoData.Seed(Paths, Library);
-        Isolation = new Isolation(Paths);
-        Runner = new GameRunner(Library, Isolation, simulate: Demo);
+        Settings = JsonFiles.Read<Settings>(Paths.SettingsFile) ?? new Settings();
+        if (OperatingSystem.IsWindows())
+        {
+            Isolation = new Isolation(Paths);
+            Runner = new GameRunner(Library, Isolation, simulate: Demo);
+        }
+        else
+        {
+            RefreshSteamSetup();
+            Isolation = new PrefixIsolation(Paths);
+            Runner = new GameRunner(Library, Isolation, simulate: Demo, new ProtonStarter(Paths, RefreshSteamSetup, () => Settings.ProtonFolder));
+        }
         Steam = Demo ? new DemoSteam() : new SteamSession(Paths, http);
         Steam.Changed += () => Changed?.Invoke();
         News = new NewsReader(Paths, http);
         Branches = Demo ? new DemoBranches() : new SteamBranches();
         Verification = new Verification(Paths, http, Demo ? DemoData.VerifiedListUrl(Paths) : Environment.GetEnvironmentVariable("MULTIVRC_VERIFIED_URL") is { Length: > 0 } listUrl ? listUrl : Verification.DefaultListUrl);
         _ = Task.Run(async () => { await Verification.RefreshAsync(); Changed?.Invoke(); });
-        Settings = JsonFiles.Read<Settings>(Paths.SettingsFile) ?? new Settings();
         Runner.Changed += () => Changed?.Invoke();
         BuiltInTemplates.Install(Library);
         try { StartupNotice = Runner.RecoverAfterCrash(); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            StartupNotice = $"The last session's data could not be put back automatically: {e.Message}. Your own VRChat data is in {LauncherPaths.GameDataFolder}.multivrc-original.";
+            StartupNotice = OperatingSystem.IsWindows()
+                ? $"The last session's data could not be put back automatically: {e.Message}. Your own VRChat data is in {LauncherPaths.GameDataFolder}.multivrc-original."
+                : $"The last session could not be tidied up: {e.Message}";
         }
     }
 

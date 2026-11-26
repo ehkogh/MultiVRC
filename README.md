@@ -10,7 +10,7 @@ Official VRChat, betas, old builds and private servers. Installed together, neve
 [![Release](https://img.shields.io/github/v/release/ehkogh/MultiVRC?include_prereleases&style=flat-square&color=6ff0bf&label=release)](https://github.com/ehkogh/MultiVRC/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/ehkogh/MultiVRC/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/ehkogh/MultiVRC/actions/workflows/ci.yml)
 [![Licence](https://img.shields.io/badge/licence-MIT-6aa8ff?style=flat-square)](LICENSE)
-[![Windows](https://img.shields.io/badge/platform-Windows-a0a8b8?style=flat-square)](#building)
+[![Windows · Linux](https://img.shields.io/badge/platform-Windows%20·%20Linux-a0a8b8?style=flat-square)](#linux)
 
 [**Download**](https://github.com/ehkogh/MultiVRC/releases/latest) · [Website](https://multivrc.ehko.dev) · [Verified servers](https://multivrc.ehko.dev/#servers) · [Making a template](docs/making-templates.md)
 
@@ -30,6 +30,7 @@ settings or logins. Built with C# and [Photino.Blazor](https://github.com/trypho
 
 - [Features](#features)
 - [Easy Anti-Cheat](#easy-anti-cheat)
+- [Linux](#linux)
 - [Trust badges](#trust-badges)
 - [Templates](#templates)
 - [Updates](#updates)
@@ -78,6 +79,38 @@ Using the launcher must never be why someone is banned.
 
 Templates that install files are only allowed for modded instances, and the launcher shows
 everything a template downloads (and whether it has a checksum) before you use it.
+
+## Linux
+
+MultiVRC runs on Linux too, starting VRChat through Steam's Proton the way Steam does. Download
+`MultiVRC-linux-x64.zip` from the [releases](https://github.com/ehkogh/MultiVRC/releases/latest),
+unzip it anywhere and run `MultiVRC`. The first start adds it to your app menu.
+
+You need:
+
+- **Steam**, installed normally (not the Flatpak or Snap one) and signed in.
+- **A Proton** from Steam's Tools: Proton 9.0 or newer, or Experimental. GE-Proton in
+  `compatibilitytools.d` works too. Settings → Proton picks one; Automatic uses Valve's newest.
+- **Proton EasyAntiCheat Runtime** from Steam's Tools, for official instances.
+- **WebKitGTK** for the window (`libwebkit2gtk-4.1`), which most desktops already have.
+
+How it differs from Windows:
+
+- **Each instance has its own Proton prefix** in its folder, so its settings and login are simply
+  its own. Nothing is swapped in and out, and Steam's own VRChat prefix is never touched. The
+  instance's data folder is linked into its prefix, so logs and the shared download cache sit where
+  they do on Windows. Photos from every instance go to `~/Pictures/VRChat`.
+- **The first start of an instance is slower**, while Proton sets up its prefix.
+- **The window uses your desktop's title bar.**
+- **The Steam sign-in** is kept in a file only your user can read, instead of being encrypted with
+  Windows' DPAPI.
+- Picture backgrounds are shown full size instead of as smaller thumbnails.
+- **No tray icon or notifications yet**, so closing the window quits MultiVRC instead of leaving
+  it running in the background.
+- **`multivrc://` links** work once MultiVRC has been started once, which registers it with the
+  desktop.
+
+macOS isn't supported: Proton is Linux-only, and Easy Anti-Cheat doesn't run under Wine on a Mac.
 
 ## Trust badges
 
@@ -191,7 +224,8 @@ Development builds never update themselves.
 
 ## Building
 
-Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download) on Windows.
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download), on Windows or Linux. On Linux the
+registry and junction tests are skipped.
 
 ```powershell
 dotnet build
@@ -201,7 +235,7 @@ dotnet run --project src/MultiVRC.App
 
 | Environment variable | |
 | --- | --- |
-| `MULTIVRC_DATA_DIR` | Use another data folder instead of `%LOCALAPPDATA%\MultiVRC`. |
+| `MULTIVRC_DATA_DIR` | Use another data folder instead of `%LOCALAPPDATA%\MultiVRC` (`~/.local/share/MultiVRC` on Linux). |
 | `MULTIVRC_DEVTOOLS_PORT` | Open the UI to Chrome DevTools or Playwright over CDP, e.g. `9333`. |
 | `MULTIVRC_VERIFIED_URL` | Read the verified list from another address, such as a local `wrangler dev`. |
 
@@ -209,8 +243,9 @@ dotnet run --project src/MultiVRC.App
 
 Push a tag. `v0.2.0` publishes a release and `v0.3.0-beta.1` publishes a pre-release
 ([`release.yml`](.github/workflows/release.yml)). The workflow tests, builds a self-contained
-`MultiVRC-win-x64.zip` with the tag as its version, builds the installer, and attaches them with the
-zip's `.sha256`. The zip and its `.sha256` are what launchers update from.
+`MultiVRC-win-x64.zip` and `MultiVRC-linux-x64.zip` with the tag as their version, builds the
+installer, and attaches them with each zip's `.sha256`. The zips and their `.sha256` files are what
+launchers update from, each from its own platform's.
 
 ```powershell
 git tag v0.2.0

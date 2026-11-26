@@ -27,12 +27,17 @@
                 <div class="setting-text"><b>Minimise when a game starts</b><span>Moves the launcher out of the way while you play.</span></div>
                 <Toggle Value="State.Settings.MinimizeOnLaunch" ValueChanged="v => Change(s => s.MinimizeOnLaunch = v)" />
             </div>
+            @if (Tray.Supported)
+            {
             <div class="setting">
                 <div class="setting-text"><b>Keep running in the background when closed</b><span>Closing the window leaves MultiVRC by the clock, so it can keep your instances up to date. Quit it from that icon.</span></div>
                 <Toggle Value="State.Settings.CloseToBackground" ValueChanged="v => Change(s => s.CloseToBackground = v)" />
             </div>
+            }
         </section>
 
+        @if (Tray.Supported)
+        {
         <section class="settings-section" id="settings-notifications">
             <h2 class="settings-title">Notifications</h2>
             <div class="setting">
@@ -64,6 +69,42 @@
                 <button class="secondary" @onclick="TestNotification">Send a test</button>
             </div>
         </section>
+        }
+
+        @if (OperatingSystem.IsLinux())
+        {
+            var steam = State.SteamSetup;
+            var picked = steam.Pick(State.Settings.ProtonFolder);
+            <section class="settings-section" id="settings-proton">
+                <h2 class="settings-title">Proton</h2>
+                @if (steam.Root is null)
+                {
+                    <div class="notice warn small">Steam isn't installed for this user. MultiVRC starts VRChat through Steam's Proton, so install Steam (not the Flatpak or Snap one) and sign in.</div>
+                }
+                else
+                {
+                    <div class="setting">
+                        <div class="setting-text"><b>Start games with</b><span>Each instance gets its own Proton prefix, so its settings and login stay its own. Steam's own VRChat is never touched.</span></div>
+                        <select value="@(State.Settings.ProtonFolder ?? "")" @onchange="e => Change(s => s.ProtonFolder = e.Value is string { Length: > 0 } v ? v : null)">
+                            <option value="">Automatic@(steam.Pick(null) is { } newest ? $" ({newest.Name})" : "")</option>
+                            @foreach (var proton in steam.Protons) { <option value="@proton.Folder">@proton.Name</option> }
+                        </select>
+                    </div>
+                    @if (picked is null)
+                    {
+                        <div class="notice warn small">No Proton found. In Steam, install <b>Proton 9.0</b> or newer from your library's Tools.</div>
+                    }
+                    <div class="setting">
+                        <div class="setting-text">
+                            <b>Easy Anti-Cheat for Proton</b>
+                            <span>@AntiCheatStatus(steam)</span>
+                        </div>
+                        <button class="secondary" @onclick="() => State.RefreshSteamSetup()">Look again</button>
+                    </div>
+                }
+                <div class="setting-note">The first start of each instance sets up its prefix, which can take a minute.</div>
+            </section>
+        }
 
         <section class="settings-section" id="settings-steam">
             <h2 class="settings-title">Steam account</h2>
@@ -151,7 +192,8 @@
     private static readonly (string Id, string Label, string Icon)[] Sections =
     [
         ("general", "General", "settings"),
-        ("notifications", "Notifications", "bell"),
+        .. (OperatingSystem.IsLinux() ? new[] { ("proton", "Proton", "layers") } : []),
+        .. (Tray.Supported ? new[] { ("notifications", "Notifications", "bell") } : []),
         ("steam", "Steam account", "lock"),
         ("updates", "Updates", "download"),
         ("multivrc", "MultiVRC", "sparkles"),
@@ -162,6 +204,10 @@
 
     private void TestNotification() =>
         Tray.Notify(NotifyKind.Test, "MultiVRC notifications work", "This is what you'll see when an instance updates.", "/settings");
+
+    private static string AntiCheatStatus(SteamSetup steam) => steam.AntiCheatRuntime is null
+        ? "Not installed. Official VRChat needs it: in Steam, install “Proton EasyAntiCheat Runtime” from your library's Tools."
+        : "Installed. Official instances start with anti-cheat, as on Windows.";
 
     private ElementReference _nav;
     private bool _signingIn;

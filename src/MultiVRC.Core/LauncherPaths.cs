@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace MultiVRC.Core;
 
@@ -28,11 +29,15 @@ public sealed class LauncherPaths(string root)
 
     public string InstanceData(string instanceId) => Path.Combine(Instances, instanceId, "data");
 
+    /// <summary>Linux: the instance's own Proton prefix (STEAM_COMPAT_DATA_PATH).</summary>
+    public string InstanceProton(string instanceId) => Path.Combine(Instances, instanceId, "proton");
+
     public void EnsureCreated()
     {
         foreach (var dir in new[] { Root, Builds, Instances, Templates, Tools, SharedCache }) Directory.CreateDirectory(dir);
     }
 
+    [SupportedOSPlatform("windows")]
     public static string LocalLow
     {
         get
@@ -47,6 +52,7 @@ public sealed class LauncherPaths(string root)
         }
     }
 
+    [SupportedOSPlatform("windows")]
     public static string GameDataFolder => Path.Combine(LocalLow, "VRChat", "VRChat");
 
     public const string GameRegistryKey = @"Software\VRChat\VRChat";

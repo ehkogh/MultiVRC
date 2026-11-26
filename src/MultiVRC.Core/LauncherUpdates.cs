@@ -15,7 +15,11 @@ public interface IReleaseSource
 public sealed class GitHubReleases(HttpClient http, string repository = GitHubReleases.DefaultRepository) : IReleaseSource
 {
     public const string DefaultRepository = "ehkogh/MultiVRC";
-    public const string Asset = "MultiVRC-win-x64.zip";
+    /// <summary>The release download for this platform: MultiVRC-win-x64.zip or MultiVRC-linux-x64.zip.</summary>
+    public static string Asset { get; } = $"MultiVRC-{(OperatingSystem.IsWindows() ? "win" : "linux")}-{(System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "x64")}.zip";
+
+    /// <summary>The launcher's own program file.</summary>
+    public static string ExeName { get; } = OperatingSystem.IsWindows() ? "MultiVRC.exe" : "MultiVRC";
 
     public async Task<IReadOnlyList<LauncherRelease>> GetAsync(CancellationToken ct = default)
     {
@@ -106,10 +110,10 @@ public sealed class LauncherUpdater(LauncherPaths paths, HttpClient http, IRelea
             Directory.Delete(staged);
             Directory.Move(inner, staged);
         }
-        if (!File.Exists(Path.Combine(staged, "MultiVRC.exe")))
+        if (!File.Exists(Path.Combine(staged, GitHubReleases.ExeName)))
         {
             FileLinks.DeleteTree(staged);
-            throw new InvalidOperationException($"MultiVRC {release.Version}'s download has no MultiVRC.exe in it. Not installed.");
+            throw new InvalidOperationException($"MultiVRC {release.Version}'s download has no {GitHubReleases.ExeName} in it. Not installed.");
         }
         JsonFiles.Write(ReadyFile, new ReadyUpdate(release.Version));
     }
@@ -181,7 +185,11 @@ public sealed class LauncherUpdater(LauncherPaths paths, HttpClient http, IRelea
         }
         FileLinks.DeleteTree(staged);
         File.Delete(ReadyFile);
-        return Path.Combine(appDirectory, "MultiVRC.exe");
+        var exe = Path.Combine(appDirectory, GitHubReleases.ExeName);
+        // A zip made on Windows doesn't carry the executable bit.
+        if (!OperatingSystem.IsWindows() && File.Exists(exe))
+            File.SetUnixFileMode(exe, File.GetUnixFileMode(exe) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+        return exe;
     }
 
     public static void RemoveLeftovers(string appDirectory)

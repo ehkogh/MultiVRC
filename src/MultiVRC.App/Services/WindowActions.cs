@@ -8,6 +8,9 @@ public static class WindowActions
 {
     public static PhotinoWindow? Window { get; set; }
 
+    /// <summary>Windows: a chromeless window with MultiVRC's own buttons. Elsewhere the desktop's title bar is used.</summary>
+    public static bool OwnTitleBar => OperatingSystem.IsWindows();
+
     public static async Task<string?> PickFolderAsync(string title)
     {
         if (Window is null) return null;
@@ -31,7 +34,14 @@ public static class WindowActions
     public static void OpenFolder(string path)
     {
         if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+        if (OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+        else
+        {
+            var start = new ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open") { UseShellExecute = false };
+            start.ArgumentList.Add(path);
+            try { Process.Start(start); }
+            catch (System.ComponentModel.Win32Exception) { }
+        }
     }
 
     public static void OpenUrl(string? url)
@@ -45,6 +55,11 @@ public static class WindowActions
     public static void BringToFront()
     {
         if (Window is not { } window) return;
+        if (!OperatingSystem.IsWindows())
+        {
+            window.Invoke(() => window.SetMinimized(false));
+            return;
+        }
         window.Invoke(() =>
         {
             if (!IsWindowVisible(window.WindowHandle)) ShowWindow(window.WindowHandle, SwShow);
@@ -67,22 +82,22 @@ public static class WindowActions
 
     public static void Hide()
     {
-        if (Window is { } window) ShowWindow(window.WindowHandle, SwHide);
+        if (OperatingSystem.IsWindows() && Window is { } window) ShowWindow(window.WindowHandle, SwHide);
     }
 
     /// <summary>The window is showing (minimised still counts), rather than closed to the background.</summary>
-    public static bool IsOpen => Window is { } window && IsWindowVisible(window.WindowHandle);
+    public static bool IsOpen => Window is { } window && (!OperatingSystem.IsWindows() || IsWindowVisible(window.WindowHandle));
 
     public static void BeginMove()
     {
-        if (Window is not { } window) return;
+        if (!OperatingSystem.IsWindows() || Window is not { } window) return;
         ReleaseCapture();
         SendMessage(window.WindowHandle, WmNcLButtonDown, (IntPtr)HtCaption, IntPtr.Zero);
     }
 
     public static void RoundCorners()
     {
-        if (Window is not { } window) return;
+        if (!OperatingSystem.IsWindows() || Window is not { } window) return;
         var preference = DwmRound;
         _ = DwmSetWindowAttribute(window.WindowHandle, DwmWindowCornerPreference, ref preference, sizeof(int));
     }
