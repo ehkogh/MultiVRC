@@ -9,6 +9,7 @@ public sealed class LauncherUpdateService : IDisposable
 
     private readonly LauncherState _state;
     private readonly Toasts _toasts;
+    private readonly Tray _tray;
     private readonly LauncherUpdater? _updater;
     private Timer? _timer;
 
@@ -26,10 +27,11 @@ public sealed class LauncherUpdateService : IDisposable
 
     public event Action? Changed;
 
-    public LauncherUpdateService(LauncherState state, Toasts toasts, HttpClient http)
+    public LauncherUpdateService(LauncherState state, Toasts toasts, Tray tray, HttpClient http)
     {
         _state = state;
         _toasts = toasts;
+        _tray = tray;
         IReleaseSource? source = state.Demo ? new DemoReleases() : IsReleaseBuild ? new GitHubReleases(http) : null;
         if (source is not null)
             _updater = new LauncherUpdater(state.Paths, http, source, LauncherState.Version, AppContext.BaseDirectory);
@@ -76,6 +78,8 @@ public sealed class LauncherUpdateService : IDisposable
             else await _updater.DownloadAsync(release, progress);
             Set(Phase.Ready);
             _toasts.Ok($"MultiVRC {release.Version} is ready. It installs the next time MultiVRC starts, or now from Settings.");
+            _tray.Notify(NotifyKind.LauncherUpdate, $"MultiVRC {release.Version} is ready",
+                "It installs the next time MultiVRC starts. Click to restart into it from Settings.", "/settings");
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or InvalidOperationException or InvalidDataException)
         {
@@ -100,7 +104,7 @@ public sealed class LauncherUpdateService : IDisposable
             var exe = _updater!.Install();
             SingleInstance.Current?.Dispose();
             Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
-            WindowActions.Close();
+            WindowActions.Quit();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {

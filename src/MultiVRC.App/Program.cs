@@ -33,6 +33,7 @@ public static class Program
         builder.Services.AddSingleton(new HttpClient { DefaultRequestHeaders = { { "User-Agent", "MultiVRC" } } });
         builder.Services.AddSingleton<LauncherState>();
         builder.Services.AddSingleton<Toasts>();
+        builder.Services.AddSingleton<Tray>();
         builder.Services.AddSingleton<BackdropPictures>();
         builder.Services.AddSingleton<Backdrop>();
         builder.Services.AddSingleton<ServerLook>();
@@ -61,6 +62,25 @@ public static class Program
 
         WindowActions.Window = app.MainWindow;
 
-        app.Run();
+        var state = app.Services.GetRequiredService<LauncherState>();
+        var tray = app.Services.GetRequiredService<Tray>();
+        tray.CheckRequested += () => _ = app.Services.GetRequiredService<UpdateService>().CheckAsync(auto: true);
+        state.Changed += () => tray.SetStatus(state.Runner.Running is { } playing ? $"Playing {playing.Name}" : null);
+        app.MainWindow.RegisterWindowClosingHandler((_, _) =>
+        {
+            if (WindowActions.Quitting || !state.Settings.CloseToBackground) return false;
+            WindowActions.Hide();
+            if (!state.Settings.ToldAboutBackground)
+            {
+                state.Settings.ToldAboutBackground = true;
+                state.SaveSettings(state.Settings);
+                tray.Notify(NotifyKind.Info, "MultiVRC is still running",
+                    "It keeps your instances up to date in the background. Quit it from its icon by the clock, or turn this off in Settings.");
+            }
+            return true;
+        });
+
+        try { app.Run(); }
+        finally { tray.Dispose(); }
     }
 }
