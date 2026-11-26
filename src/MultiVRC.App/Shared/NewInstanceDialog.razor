@@ -118,6 +118,8 @@
     [Parameter] public bool Open { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
 
+    [Parameter] public string? Preselect { get; set; }
+
     private sealed record Option(string Key, string Group, string Name, string Subtitle, string Description,
         Template? Template, VerifiedServer? Verified, SteamBranch? Branch, bool Custom, Trust? Trust,
         string ArtSeed, string Accent, string? IconUrl, string? IconBackground = null);
@@ -150,7 +152,7 @@
             _accent = Art.RandomAccent();
             _artSeed = Guid.NewGuid().ToString();
             await LoadAsync();
-            await SelectAsync(_options.FirstOrDefault());
+            await SelectAsync(_options.FirstOrDefault(o => Preselect is not null && o.Template?.Id == Preselect) ?? _options.FirstOrDefault());
         }
         else if (!Open) _wasOpen = false;
     }

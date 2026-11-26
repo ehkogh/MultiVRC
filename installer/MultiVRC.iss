@@ -44,6 +44,12 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Name: "{autoprograms}\MultiVRC"; Filename: "{app}\MultiVRC.exe"
 Name: "{autodesktop}\MultiVRC"; Filename: "{app}\MultiVRC.exe"; Tasks: desktopicon
 
+[Registry]
+Root: HKA; Subkey: "Software\Classes\multivrc"; ValueType: string; ValueName: ""; ValueData: "URL:MultiVRC"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\multivrc"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\multivrc\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\MultiVRC.exe"",0"
+Root: HKA; Subkey: "Software\Classes\multivrc\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MultiVRC.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\MultiVRC.exe"; Description: "Start MultiVRC"; Flags: nowait postinstall skipifsilent
 

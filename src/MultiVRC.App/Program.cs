@@ -11,8 +11,25 @@ public static class Program
     {
         var options = LaunchOptions.FromArgs(args);
         if (LauncherUpdateService.InstallOnStart(options, args)) return;
+
+        var link = LinkInbox.FromArgs(args);
+        using var single = SingleInstance.Claim(options.DataDir, link);
+        if (single is null) return;
+        SingleInstance.Current = single;
+        var inbox = new LinkInbox();
+        inbox.Add(link);
+        single.Listen(text =>
+        {
+            WindowActions.BringToFront();
+            inbox.Add(text);
+        });
+#if !DEBUG
+        if (!options.Demo) _ = Task.Run(LinkRegistration.Ensure);
+#endif
+
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton(inbox);
         builder.Services.AddSingleton(new HttpClient { DefaultRequestHeaders = { { "User-Agent", "MultiVRC" } } });
         builder.Services.AddSingleton<LauncherState>();
         builder.Services.AddSingleton<Toasts>();

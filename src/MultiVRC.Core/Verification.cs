@@ -52,11 +52,13 @@ public sealed class Verification(LauncherPaths paths, HttpClient http, string li
 
     private Trust Community(Template? template)
     {
-        var entry = template?.SourceUrl is { } url ? _servers.FirstOrDefault(s => Same(s.TemplateUrl, url)) : null;
+        var entry = template?.SourceUrl is { } url ? Find(url) : null;
         return entry is not null
             ? new Trust(TrustLevel.Verified, entry)
             : new Trust(TrustLevel.Unverified, null);
     }
+
+    public VerifiedServer? Find(string templateUrl) => _servers.FirstOrDefault(s => Same(s.TemplateUrl, templateUrl));
 
     private static bool Same(string a, string b) =>
         string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);

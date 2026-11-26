@@ -98,6 +98,7 @@ public sealed class LauncherUpdateService : IDisposable
         try
         {
             var exe = _updater!.Install();
+            SingleInstance.Current?.Dispose();
             Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
             WindowActions.Close();
         }

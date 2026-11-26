@@ -1,0 +1,165 @@
+@implements IDisposable
+@inject LinkInbox Inbox
+@inject LauncherState State
+@inject Toasts Messages
+@inject NavigationManager Navigation
+
+<Modal Open="_review is not null" OpenChanged="open => { if (!open) _review = null; }" Title="Add a server that isn't verified?">
+    <ChildContent>
+        @if (_review is { } review)
+        {
+            <p>A link asked MultiVRC to add <b>@review.Template.Name</b> from <b>@review.Host</b>.</p>
+            <div class="small muted"><code>@review.Url</code></div>
+            <div class="notice warn small">
+                <b>Nobody has checked this server.</b> It isn't on MultiVRC's verified list, so only add it if you
+                trust whoever sent you the link.
+                @if (review.Template.Downloads.Count > 0)
+                {
+                    <div>Its template installs files that run with the game:</div>
+                    <ul>@foreach (var download in review.Template.Downloads) { <li><code>@download.Url</code>@(download.Sha256 is null ? " (no checksum!)" : "")</li> }</ul>
+                }
+            </div>
+            <div class="hint">Nothing is installed yet. Adding it only saves the server; you choose whether to make an instance next.</div>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="spacer"></span>
+        <button class="secondary" @onclick="() => _review = null">Cancel</button>
+        <button class="danger" @onclick="AddReviewedAsync">Add anyway</button>
+    </Footer>
+</Modal>
+
+<NewInstanceDialog @bind-Open="_creating" Preselect="@_preselect" />
+
+@code {
+    private sealed record Review(string Url, string Host, Template Template);
+
+    private Review? _review;
+    private bool _creating, _working;
+    private string? _preselect;
+
+    protected override void OnInitialized() => Inbox.Arrived += OnArrived;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await DrainAsync();
+    }
+
+    private void OnArrived() => InvokeAsync(DrainAsync);
+
+    private async Task DrainAsync()
+    {
+        if (_working) return;
+        _working = true;
+        try
+        {
+            while (Inbox.TryTake(out var link))
+            {
+                if (link is LaunchRequest launch) await LaunchAsync(launch);
+                else if (link is InstallRequest install) await InstallAsync(install);
+                StateHasChanged();
+            }
+        }
+        finally { _working = false; }
+    }
+
+    private async Task LaunchAsync(LaunchRequest link)
+    {
+        var instance = AppLinks.PickInstance(State.Library.Instances(), link.Target);
+        if (instance is null)
+        {
+            if (State.Library.FindTemplate(link.Target) is { } template)
+            {
+                Messages.Ok($"You don't have a {template.Name} instance yet. Make one, then the link will start it.");
+                await OpenCreateAsync(template.Id);
+            }
+            else Messages.Error($"The link wants to start \"{link.Target}\", but there's no instance or server by that name. Add the server first.");
+            return;
+        }
+
+        Navigation.NavigateTo($"/instance/{instance.Id}");
+        if (AppLinks.Choose(instance, State.Library.PlayModesOf(instance), link.Option) is not { } choice)
+        {
+            Messages.Error($"{instance.Name} has no way to start called \"{link.Option}\".");
+            return;
+        }
+        var how = choice.Play is { } play ? $": {play.Label}" : choice.Mode == LaunchMode.Desktop ? " in desktop mode" : "";
+        if (await Messages.Try(() => State.Runner.Launch(instance, choice.Mode, choice.Play), $"Starting {instance.Name}{how}…")
+            && State.Settings.MinimizeOnLaunch && !State.Demo)
+            WindowActions.Minimize();
+    }
+
+    private async Task InstallAsync(InstallRequest link)
+    {
+        if (State.Library.Templates().FirstOrDefault(t => SameUrl(t.SourceUrl, link.TemplateUrl)) is { } installed)
+        {
+            await OpenCreateAsync(installed.Id);
+            return;
+        }
+
+        var host = new Uri(link.TemplateUrl).Host;
+        Template template;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await State.Verification.RefreshAsync(timeout.Token);
+            template = await State.Library.FetchTemplateAsync(link.TemplateUrl, timeout.Token);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or IOException)
+        {
+            Messages.Error($"Couldn't read the server template from {host}: {e.Message}");
+            return;
+        }
+
+        if (State.Library.FindTemplate(template.Id) is { } clash && !SameUrl(clash.SourceUrl, link.TemplateUrl))
+        {
+            Messages.Error($"The template from {host} calls itself \"{template.Id}\", which {clash.Name} already uses. It was not added.");
+            return;
+        }
+
+        if (State.Verification.Find(link.TemplateUrl) is { } verified)
+        {
+            if (await SaveAsync(template)) Messages.Ok($"Added {template.Name}, a verified community server ({verified.Name}).");
+            return;
+        }
+        _review = new Review(link.TemplateUrl, host, template);
+    }
+
+    private async Task AddReviewedAsync()
+    {
+        if (_review is not { } review) return;
+        _review = null;
+        if (await SaveAsync(review.Template)) Messages.Ok($"Added {review.Template.Name}.");
+    }
+
+    private async Task<bool> SaveAsync(Template template)
+    {
+        try { State.Library.SaveTemplate(template); }
+        catch (Exception e) when (e is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Messages.Error(e.Message);
+            return false;
+        }
+        State.NotifyChanged();
+        await OpenCreateAsync(template.Id);
+        return true;
+    }
+
+    private async Task OpenCreateAsync(string templateId)
+    {
+        if (_creating)
+        {
+            _creating = false;
+            StateHasChanged();
+            await Task.Yield();
+        }
+        _preselect = templateId;
+        _creating = true;
+        StateHasChanged();
+    }
+
+    private static bool SameUrl(string? a, string b) =>
+        a is not null && string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose() => Inbox.Arrived -= OnArrived;
+}

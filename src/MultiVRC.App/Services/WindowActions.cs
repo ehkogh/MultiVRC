@@ -42,6 +42,17 @@ public static class WindowActions
 
     public static void Minimize() => Window?.SetMinimized(true);
 
+    public static void BringToFront()
+    {
+        if (Window is not { } window) return;
+        window.Invoke(() =>
+        {
+            if (!IsWindowVisible(window.WindowHandle)) ShowWindow(window.WindowHandle, SwShow);
+            if (IsIconic(window.WindowHandle)) ShowWindow(window.WindowHandle, SwRestore);
+            SetForegroundWindow(window.WindowHandle);
+        });
+    }
+
     public static void Close() => Window?.Close();
 
     public static void BeginMove()
@@ -61,6 +72,13 @@ public static class WindowActions
     private const int WmNcLButtonDown = 0x00A1, HtCaption = 2;
     private const int DwmWindowCornerPreference = 33;
     private const int DwmRound = 2;
+    private const int SwShow = 5, SwRestore = 9;
+
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);

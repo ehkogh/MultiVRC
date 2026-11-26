@@ -116,6 +116,8 @@ public sealed class TemplatePlayMode
 {
     public required string Label { get; set; }
 
+    public string? Id { get; set; }
+
     public string? Icon { get; set; }
 
     public List<string> Arguments { get; set; } = [];
