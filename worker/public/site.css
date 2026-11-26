@@ -120,6 +120,13 @@ textarea { min-height: 90px; resize: vertical; }
 .input-group { display: flex; gap: 8px; }
 .input-group > input { flex: 1; min-width: 0; }
 .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.alt-download { margin: 14px 0 0; font-size: 13.5px; color: #8e97a8; }
+.alt-download a { color: #c8cfdb; text-decoration: underline; text-decoration-color: #ffffff33; text-underline-offset: 3px; }
+.alt-download a:hover { color: #fff; text-decoration-color: currentColor; }
+.pre-tag {
+    display: inline-block; margin-left: 2px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+    font-size: 11px; font-weight: 600; letter-spacing: .03em; color: #ffc26b; background: #ffc26b1a; border: 1px solid #ffc26b33;
+}
 .form-error { margin-top: 12px; color: var(--danger); font-size: 13px; }
 .trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .cf-turnstile { margin-top: 16px; }

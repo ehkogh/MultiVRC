@@ -94,6 +94,7 @@ export function renderHome({ servers, release, stars, repo, turnstileSiteKey }) 
         <a class="button big" href="${download}">${icon("download", 18)} Download</a>
         <a class="button secondary big" href="https://github.com/${repo}" target="_blank" rel="noopener">${icon("github", 18)} Source</a>
       </div>
+      ${release?.linux ? html`<p class="alt-download">Also on Linux: <a href="${release.linux.url}">download ${release.linux.version}</a>${release.linux.prerelease ? html` <span class="pre-tag">pre-release</span>` : ""} · <a href="https://github.com/${repo}#linux" target="_blank" rel="noopener">what you need</a></p>` : ""}
     </div>
     <figure class="hero-shot">
       <img src="/img/launcher.webp" width="1360" height="800" alt="The MultiVRC launcher open on a community server's page, with its instances down the left rail, a Play button, play time and the server's news.">

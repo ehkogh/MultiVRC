@@ -14,6 +14,8 @@ permissions:
 jobs:
   linux:
     name: Build for Linux
+    # Linux ships in pre-releases only (vX.Y.Z-beta.N) until it has been tried on real machines.
+    if: contains(github.ref_name, '-')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,6 +45,8 @@ jobs:
   release:
     name: Build and publish
     needs: linux
+    # Runs when the Linux build succeeded, or was skipped because this is a stable release.
+    if: ${{ !cancelled() && needs.linux.result != 'failure' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -81,6 +85,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Inno Setup failed' }
 
       - uses: actions/download-artifact@v7
+        if: needs.linux.result == 'success'
         with:
           name: linux
 
@@ -91,4 +96,6 @@ jobs:
         run: |
           $extra = @()
           if ("${{ steps.version.outputs.prerelease }}" -eq 'true') { $extra += '--prerelease' }
-          gh release create "${{ github.ref_name }}" MultiVRC-win-x64.zip MultiVRC-win-x64.zip.sha256 MultiVRC-linux-x64.zip MultiVRC-linux-x64.zip.sha256 (Get-ChildItem installer/out/MultiVRC-Setup-*.exe).FullName --title "MultiVRC ${{ github.ref_name }}" --generate-notes @extra
+          $files = @('MultiVRC-win-x64.zip', 'MultiVRC-win-x64.zip.sha256', (Get-ChildItem installer/out/MultiVRC-Setup-*.exe).FullName)
+          if (Test-Path MultiVRC-linux-x64.zip) { $files += 'MultiVRC-linux-x64.zip', 'MultiVRC-linux-x64.zip.sha256' }
+          gh release create "${{ github.ref_name }}" @files --title "MultiVRC ${{ github.ref_name }}" --generate-notes @extra

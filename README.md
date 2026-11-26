@@ -82,9 +82,12 @@ everything a template downloads (and whether it has a checksum) before you use i
 
 ## Linux
 
-MultiVRC runs on Linux too, starting VRChat through Steam's Proton the way Steam does. Download
-`MultiVRC-linux-x64.zip` from the [releases](https://github.com/ehkogh/MultiVRC/releases/latest),
-unzip it anywhere and run `MultiVRC`. The first start adds it to your app menu.
+MultiVRC runs on Linux too, starting VRChat through Steam's Proton the way Steam does. Linux builds
+come as **pre-releases for now**, until they've been tried on more machines: download
+`MultiVRC-linux-x64.zip` from the newest pre-release on the
+[releases page](https://github.com/ehkogh/MultiVRC/releases), unzip it anywhere and run `MultiVRC`.
+The first start adds it to your app menu. On Linux, MultiVRC follows pre-releases for its own
+updates by default.
 
 You need:
 
@@ -243,8 +246,9 @@ dotnet run --project src/MultiVRC.App
 
 Push a tag. `v0.2.0` publishes a release and `v0.3.0-beta.1` publishes a pre-release
 ([`release.yml`](.github/workflows/release.yml)). The workflow tests, builds a self-contained
-`MultiVRC-win-x64.zip` and `MultiVRC-linux-x64.zip` with the tag as their version, builds the
-installer, and attaches them with each zip's `.sha256`. The zips and their `.sha256` files are what
+`MultiVRC-win-x64.zip` with the tag as its version, builds the installer, and attaches them with the
+zip's `.sha256`. Pre-releases also get `MultiVRC-linux-x64.zip` and its `.sha256`; for now Linux
+ships in pre-releases only. The zips and their `.sha256` files are what
 launchers update from, each from its own platform's.
 
 ```powershell

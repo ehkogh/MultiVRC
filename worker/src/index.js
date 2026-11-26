@@ -103,20 +103,28 @@ async function home(env) {
   });
 }
 
+// The newest stable release for the Windows download, and the newest release of any kind with a Linux build:
+// Linux ships in pre-releases only for now.
 async function latestRelease(repo) {
   try {
-    const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`, {
       headers: { "User-Agent": "MultiVRC-Site", Accept: "application/vnd.github+json" },
       cf: { cacheTtl: 600, cacheEverything: true },
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return null;
-    const release = await response.json();
-    const setup = release.assets?.find((a) => /^MultiVRC-Setup-.*\.exe$/i.test(a.name));
+    const releases = (await response.json()).filter((r) => !r.draft);
+    const stable = releases.find((r) => !r.prerelease);
+    const setup = stable?.assets?.find((a) => /^MultiVRC-Setup-.*\.exe$/i.test(a.name));
+    const withLinux = releases.find((r) => r.assets?.some((a) => a.name === "MultiVRC-linux-x64.zip"));
+    const linuxZip = withLinux?.assets.find((a) => a.name === "MultiVRC-linux-x64.zip");
     return {
-      version: String(release.tag_name ?? "").replace(/^v/, ""),
-      url: release.html_url,
+      version: String(stable?.tag_name ?? "").replace(/^v/, ""),
+      url: stable?.html_url,
       setup: setup ? { url: setup.browser_download_url, size: setup.size } : null,
+      linux: linuxZip
+        ? { url: linuxZip.browser_download_url, version: String(withLinux.tag_name ?? "").replace(/^v/, ""), prerelease: !!withLinux.prerelease }
+        : null,
     };
   } catch {
     return null;
