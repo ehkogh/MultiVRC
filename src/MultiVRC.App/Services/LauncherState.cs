@@ -10,7 +10,8 @@ public sealed class Settings
 
     public bool UpdateLauncher { get; set; } = true;
 
-    public bool LauncherPrereleases { get; set; }
+    /// <summary>On by default on Linux, whose builds only come as pre-releases for now.</summary>
+    public bool LauncherPrereleases { get; set; } = OperatingSystem.IsLinux();
 
     /// <summary>Linux: the Proton folder to start games with; null for the newest of Valve's.</summary>
     public string? ProtonFolder { get; set; }

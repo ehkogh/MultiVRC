@@ -166,7 +166,7 @@
                 <Toggle Value="State.Settings.UpdateLauncher" Disabled="!LauncherUpdates.Supported" ValueChanged="v => Change(s => s.UpdateLauncher = v)" />
             </div>
             <div class="setting">
-                <div class="setting-text"><b>Get pre-releases</b><span>Try new versions before everyone else. They can have rough edges.</span></div>
+                <div class="setting-text"><b>Get pre-releases</b><span>Try new versions before everyone else. They can have rough edges.@(OperatingSystem.IsLinux() ? " Linux builds only come as pre-releases for now, so with this off MultiVRC won't update." : "")</span></div>
                 <Toggle Value="State.Settings.LauncherPrereleases" Disabled="!LauncherUpdates.Supported" ValueChanged="SetPrereleases" />
             </div>
         </section>
