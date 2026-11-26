@@ -220,13 +220,19 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
 
     public async Task<Template> InstallTemplateAsync(string url, CancellationToken ct = default)
     {
+        var template = await FetchTemplateAsync(url, ct);
+        SaveTemplate(template);
+        return template;
+    }
+
+    public async Task<Template> FetchTemplateAsync(string url, CancellationToken ct = default)
+    {
         var json = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile
             ? await File.ReadAllTextAsync(uri.LocalPath, ct)
             : await http.GetStringAsync(url, ct);
         var template = System.Text.Json.JsonSerializer.Deserialize<Template>(json, JsonFiles.Options)
                        ?? throw new InvalidOperationException("That URL did not return a template.");
         template.SourceUrl = url;
-        SaveTemplate(template);
         return template;
     }
 }

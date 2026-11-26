@@ -156,6 +156,8 @@ mode:
 ```
 
 - `label`: what the menu item says.
+- `id`: optional. Names the mode in a [launch link](#links-to-your-server). Without one, it's the
+  label in lowercase with dashes: `play-in-desktop-mode`.
 - `icon`: optional. One of the launcher's icons: `play`, `monitor`, `terminal`, `wrench`,
   `shield`, `shield-off`, `sparkles`, `server`, `globe`, `layers`, `box`. Anything else shows a play
   arrow.
@@ -262,6 +264,25 @@ players' settings, logins and cache stay.
 If you don't change `version`, edits to the file are picked up but existing instances aren't
 redone.
 
+### Links to your server
+
+Put these on your website or Discord. Clicking one opens MultiVRC (or the window already open):
+
+| Link | What it does |
+|---|---|
+| `multivrc://install/https://my-server.example/multivrc.json` | Adds your server, then offers to make an instance of it. |
+| `multivrc://launch/my-server` | Starts the player's instance of your template (`my-server` is its `id`). |
+| `multivrc://launch/my-server/play-in-desktop-mode` | Starts it with one of your `playModes`, by its `id`. |
+
+- An install link must be `https`. You can percent-encode the URL, or pass it as
+  `multivrc://install?url=…`.
+- If your template URL isn't on the [verified list](#8-get-verified-optional), the player is warned
+  first and shown what it installs. Verified servers are added straight away.
+- A launch link with no instance of your server yet opens **New instance** with it picked. With
+  more than one, it starts the one played most recently.
+- Official VRChat takes `multivrc://launch/vrchat-official` and `.../vrchat-official/desktop`.
+  Nothing a link can do turns anti-cheat off.
+
 ## 8. Get verified (optional)
 
 A server's page shows a badge in the corner:
@@ -329,6 +350,7 @@ The badge is tied to that exact URL. A template installed from anywhere else sta
 | Field | | |
 |---|---|---|
 | `label` | text | Required. The menu item's text. |
+| `id` | text | Its name in a launch link. Defaults to the label in lowercase with dashes. |
 | `icon` | text | One of the launcher's icon names (see [Extra play buttons](#extra-play-buttons)). |
 | `arguments` | list of text | Added to the template's `arguments`. |
 | `executable` | text | Starts this instead, relative to the game folder. Not for official templates. |
