@@ -33,7 +33,9 @@ Make a file called `multivrc.json`:
 
 - `id`: a short name that never changes. Letters, digits, `-` and `_` only. If a player installs
   another template with the same `id`, it replaces this one.
-- `kind`: always `"Modded"` for a private server. `"Official"` templates may not install anything.
+- `kind`: always `"Modded"`. `"Official"` is only for the templates MultiVRC ships itself; a template
+  installed from a URL that says `"Official"` is refused. Ids starting with `vrchat-` are reserved
+  for the same reason.
   They exist for VRChat's own branches.
 - `version`: any text. Change it whenever you change the template (see [step 6](#6-ship-an-update)).
 - `build`: which VRChat it runs on (next step).
@@ -314,7 +316,7 @@ The badge is tied to that exact URL. A template installed from anywhere else sta
 | `id` | text | required | Letters, digits, `-`, `_`. Never change it. |
 | `name` | text | required | Shown in the launcher. |
 | `server` | text | `""` | Your server's name, used in messages ("Thanks for playing on …"). |
-| `kind` | `"Modded"` / `"Official"` | `"Modded"` | Official templates can't install anything. |
+| `kind` | `"Modded"` | `"Modded"` | `"Official"` is refused from a URL. |
 | `version` | text | `""` | Change it to push an update to every instance. |
 | `description` | text | `""` | Shown in **New instance**. |
 | `build` | object | | See below. |

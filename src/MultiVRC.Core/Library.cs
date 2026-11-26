@@ -67,6 +67,8 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
         IProgress<string>? progress = null, CancellationToken ct = default)
     {
         if (FindBuild(buildId) is not { } build) throw new InvalidOperationException("That build is not in the library.");
+        if (template is { Kind: InstanceKind.Official } && !IsOfficial(template))
+            throw new InvalidOperationException($"\"{template.Name}\" came from {template.SourceUrl} but calls itself official. Remove it and ask its server for a fixed template.");
         var instance = new Instance
         {
             Id = JsonFiles.NewId(), Name = name.Trim(), BuildId = build.Id, CreatedAt = DateTimeOffset.UtcNow,
@@ -218,6 +220,12 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
 
     public void DeleteTemplate(string id) => File.Delete(Path.Combine(paths.Templates, $"{id}.json"));
 
+    /// <summary>Ids of MultiVRC's own official templates: vrchat-official and one per Steam branch.</summary>
+    public const string ReservedPrefix = "vrchat-";
+
+    /// <summary>Official only if MultiVRC made it: anything installed from a URL is a server's, whatever it says.</summary>
+    public static bool IsOfficial(Template template) => template.Kind == InstanceKind.Official && template.SourceUrl is null;
+
     public async Task<Template> InstallTemplateAsync(string url, CancellationToken ct = default)
     {
         var template = await FetchTemplateAsync(url, ct);
@@ -232,6 +240,10 @@ public sealed class Library(LauncherPaths paths, HttpClient http)
             : await http.GetStringAsync(url, ct);
         var template = System.Text.Json.JsonSerializer.Deserialize<Template>(json, JsonFiles.Options)
                        ?? throw new InvalidOperationException("That URL did not return a template.");
+        if (template.Kind == InstanceKind.Official)
+            throw new InvalidOperationException($"\"{template.Name}\" says it is official VRChat. Only MultiVRC itself ships official templates; a server's template must be \"Modded\".");
+        if (template.Id.StartsWith(ReservedPrefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Template ids starting with \"{ReservedPrefix}\" belong to official VRChat; \"{template.Id}\" can't be used by a server.");
         template.SourceUrl = url;
         return template;
     }
