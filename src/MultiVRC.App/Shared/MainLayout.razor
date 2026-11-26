@@ -7,6 +7,7 @@
 @inject UpdateService Updater
 @inject LauncherUpdateService LauncherUpdates
 @inject InstanceActions Actions
+@inject Tray Tray
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -112,6 +113,7 @@
         LauncherUpdates.Start();
         Background.Changed += OnBackdrop;
         Navigation.LocationChanged += OnLocationChanged;
+        Tray.OpenRequested += OnTrayOpen;
         if (State.StartupNotice is { } notice) Messages.Ok(notice);
     }
 
@@ -146,6 +148,11 @@
         StateHasChanged();
     });
 
+    private void OnTrayOpen(string? target)
+    {
+        if (target is not null) InvokeAsync(() => Navigation.NavigateTo(target));
+    }
+
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         _currentPath = Navigation.ToBaseRelativePath(e.Location).Split('?')[0];
@@ -165,5 +172,6 @@
         Updater.Changed -= Refresh;
         Background.Changed -= OnBackdrop;
         Navigation.LocationChanged -= OnLocationChanged;
+        Tray.OpenRequested -= OnTrayOpen;
     }
 }

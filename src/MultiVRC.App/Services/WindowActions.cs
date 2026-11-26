@@ -53,7 +53,25 @@ public static class WindowActions
         });
     }
 
+    /// <summary>Closes the window; with "keep running in the background" on, that only hides it.</summary>
     public static void Close() => Window?.Close();
+
+    /// <summary>Set once MultiVRC is really exiting, so closing the window no longer just hides it.</summary>
+    public static bool Quitting { get; private set; }
+
+    public static void Quit()
+    {
+        Quitting = true;
+        if (Window is { } window) window.Invoke(window.Close);
+    }
+
+    public static void Hide()
+    {
+        if (Window is { } window) ShowWindow(window.WindowHandle, SwHide);
+    }
+
+    /// <summary>The window is showing (minimised still counts), rather than closed to the background.</summary>
+    public static bool IsOpen => Window is { } window && IsWindowVisible(window.WindowHandle);
 
     public static void BeginMove()
     {
@@ -72,7 +90,7 @@ public static class WindowActions
     private const int WmNcLButtonDown = 0x00A1, HtCaption = 2;
     private const int DwmWindowCornerPreference = 33;
     private const int DwmRound = 2;
-    private const int SwShow = 5, SwRestore = 9;
+    private const int SwHide = 0, SwShow = 5, SwRestore = 9;
 
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
 

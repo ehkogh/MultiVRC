@@ -11,6 +11,27 @@ public sealed class Settings
     public bool UpdateLauncher { get; set; } = true;
 
     public bool LauncherPrereleases { get; set; }
+
+    public bool CloseToBackground { get; set; } = true;
+
+    public bool ToldAboutBackground { get; set; }
+
+    public NotificationSettings Notifications { get; set; } = new();
+}
+
+public sealed class NotificationSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    public bool UpdateAvailable { get; set; } = true;
+
+    public bool UpdateStarted { get; set; }
+
+    public bool UpdateFinished { get; set; } = true;
+
+    public bool UpdateFailed { get; set; } = true;
+
+    public bool LauncherUpdate { get; set; } = true;
 }
 
 public sealed class LauncherState : IDisposable

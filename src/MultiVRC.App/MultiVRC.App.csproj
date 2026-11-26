@@ -10,7 +10,14 @@
     <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon\MultiVRC.ico</ApplicationIcon>
+    <!-- Only for the tray icon and its notifications. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />

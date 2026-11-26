@@ -8,6 +8,8 @@ public sealed class UpdateService : IDisposable
 
     private readonly LauncherState _state;
     private readonly Toasts _toasts;
+    private readonly Tray _tray;
+    private readonly HashSet<string> _announced = [];
     private readonly Updates _updates;
     private readonly Dictionary<string, PendingUpdate> _pending = [];
     private readonly SemaphoreSlim _applying = new(1, 1);
@@ -19,10 +21,11 @@ public sealed class UpdateService : IDisposable
 
     public event Action? Changed;
 
-    public UpdateService(LauncherState state, Toasts toasts)
+    public UpdateService(LauncherState state, Toasts toasts, Tray tray)
     {
         _state = state;
         _toasts = toasts;
+        _tray = tray;
         _updates = new Updates(state.Library, state.Branches);
     }
 
@@ -53,10 +56,25 @@ public sealed class UpdateService : IDisposable
             Changed?.Invoke();
         }
 
+        Announce(auto);
         if (!auto || !_state.Settings.AutoUpdate) return;
         foreach (var update in _pending.Values.ToList())
             if (_state.Library.FindInstance(update.InstanceId) is { AutoUpdate: true } instance && _state.Runner.Running?.Id != instance.Id)
                 await ApplyAsync(update.InstanceId, quiet: true);
+    }
+
+    private bool WillApply(Instance instance, bool auto) =>
+        auto && _state.Settings.AutoUpdate && instance.AutoUpdate && _state.Runner.Running?.Id != instance.Id;
+
+    /// <summary>Tells about each update once; the ones about to install themselves are told about as they do.</summary>
+    private void Announce(bool auto)
+    {
+        foreach (var update in _pending.Values.ToList())
+        {
+            if (!_announced.Add($"{update.InstanceId}|{update.Summary}")) continue;
+            if (_state.Library.FindInstance(update.InstanceId) is not { } instance || WillApply(instance, auto)) continue;
+            _tray.Notify(NotifyKind.UpdateAvailable, $"{instance.Name} has an update", $"{update.Summary}. Click to open it.", $"/instance/{instance.Id}");
+        }
     }
 
     public async Task ApplyAsync(string instanceId, bool quiet = false)
@@ -67,6 +85,7 @@ public sealed class UpdateService : IDisposable
         try
         {
             Report(instanceId, "Starting…", 0);
+            _tray.Notify(NotifyKind.UpdateStarted, $"Updating {instance.Name}", update.Summary, $"/instance/{instanceId}");
             var template = instance.TemplateId is { } id ? _state.Library.FindTemplate(id) : null;
             var buildId = instance.BuildId;
             if (update.ManifestId is { } manifest)
@@ -74,12 +93,15 @@ public sealed class UpdateService : IDisposable
             Report(instanceId, "Setting up…", 100);
             await _state.Library.SwitchBuildAsync(instance, buildId, template);
             lock (_pending) _pending.Remove(instanceId);
-            _toasts.Ok($"{instance.Name} is up to date{(update.SteamBuildId is { } b ? $" (build {b})" : update.TemplateVersion is { Length: > 0 } v ? $" ({v})" : "")}.");
+            var done = $"{instance.Name} is up to date{(update.SteamBuildId is { } b ? $" (build {b})" : update.TemplateVersion is { Length: > 0 } v ? $" ({v})" : "")}.";
+            _toasts.Ok(done);
+            _tray.Notify(NotifyKind.UpdateFinished, $"{instance.Name} updated", done, $"/instance/{instanceId}");
             _state.NotifyChanged();
         }
         catch (Exception e) when (e is InvalidOperationException or IOException or HttpRequestException or UnauthorizedAccessException)
         {
             _toasts.Error($"{instance.Name} could not update: {e.Message}");
+            _tray.Notify(NotifyKind.UpdateFailed, $"{instance.Name} didn't update", e.Message, $"/instance/{instanceId}");
         }
         finally
         {
